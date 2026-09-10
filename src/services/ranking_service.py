@@ -63,6 +63,9 @@ class RankingService:
         """
         self.data_dir = data_dir or DATA_DIR
         self._telemetry_dir = self.data_dir / "telemetry" if data_dir else TELEMETRY_DIR
+        # _injected_frame is set when caller passes in-memory data (e.g. tests).
+        # reload_data() will NOT discard it — tests stay fast and deterministic.
+        self._injected_frame: pd.DataFrame | None = telemetry_frame
         self._frame: pd.DataFrame | None = telemetry_frame
         self.default_strategy = default_strategy
 
@@ -90,11 +93,19 @@ class RankingService:
     def reload_data(self) -> dict[str, Any]:
         """Invalidate the cache and reload data from disk (used by POST /rankings/run).
 
+        If an in-memory frame was injected (e.g. in tests), this reports its
+        statistics without reloading from disk, keeping tests fast.
+
         Returns:
             Dictionary with reload statistics.
         """
-        self._frame = None
-        frame = self.get_data()
+        if self._injected_frame is not None:
+            # Test / in-memory mode: just return stats of the injected frame
+            frame = self._injected_frame
+        else:
+            # Production mode: reload from disk
+            self._frame = None
+            frame = self.get_data()
         return {
             "status": "success",
             "rows_loaded": len(frame),

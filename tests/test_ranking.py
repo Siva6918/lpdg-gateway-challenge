@@ -180,7 +180,7 @@ class TestRegistry:
         assert isinstance(ranker, ThreeSigmaRanker)
 
     def test_get_ranker_raises_for_unknown_name(self):
-        with pytest.raises(KeyError, match="Unknown ranking strategy"):
+        with pytest.raises(ValueError, match="Unknown ranking strategy"):
             get_ranker("nonexistent_strategy")
 
     def test_available_strategies_includes_three_sigma(self):

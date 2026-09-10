@@ -44,12 +44,12 @@ def get_ranker(name: str = DEFAULT_STRATEGY) -> RankingStrategy:
         An instance of the requested RankingStrategy.
 
     Raises:
-        KeyError: if `name` is not registered.
+        ValueError: if `name` is not registered.
     """
     cls = _REGISTRY.get(name)
     if cls is None:
         available = ", ".join(sorted(_REGISTRY))
-        raise KeyError(
+        raise ValueError(
             f"Unknown ranking strategy {name!r}. "
             f"Available strategies: {available}"
         )
