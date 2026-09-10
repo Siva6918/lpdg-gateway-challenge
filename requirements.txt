@@ -1,0 +1,15 @@
+# Core data processing (same stack the baseline uses)
+pandas>=2.0
+numpy>=1.24
+pyarrow>=13.0          # needed to read Parquet files
+
+# Web API
+fastapi>=0.111
+uvicorn[standard]>=0.29
+
+# Testing
+pytest>=8.0
+httpx>=0.27            # FastAPI TestClient uses httpx under the hood
+
+# Optional: for data validation in Pydantic models
+pydantic>=2.0          # FastAPI 0.111+ ships with Pydantic v2
