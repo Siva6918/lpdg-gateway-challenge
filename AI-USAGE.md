@@ -43,23 +43,21 @@ This document honestly records how AI tools were used during the development of 
 
 ---
 
-## Real AI Mistake Caught and Corrected
+## Real AI Mistakes and Edge Cases Caught and Corrected
 
-**Bug introduced by AI:**
+### 1. Constant Baseline std=0 Silent Anomaly Suppression
+**Issue:**
+When writing the baseline wrapper and synthetic tests, we identified an edge case: if a gateway has zero variance across the 28-day baseline window (e.g., constant metric values throughout the full period, so standard deviation $\sigma = 0$), calculating the 3-sigma threshold $(mean + 3 \times std)$ without guardrails either divides by zero or evaluates conditions where an extreme surge could score zero flags if standard deviation is zero and condition requires $> mean + 3 \times std$. 
 
-When the AI generated the initial version of `ranking_service.py`, the `get_week_rankings()` method converted the `week_start` date parameter using `str(week_start)` before passing it to `pd.Timestamp()`. This worked for strings like `"2026-02-02"` but failed silently for `datetime.date` objects — it would create a `Timestamp` at midnight UTC but then the timezone-aware comparison in the baseline logic (`frame["ts"] >= end - timedelta(...)`) would raise a `TypeError: Cannot compare tz-naive and tz-aware` error only at runtime, not during the service initialization.
+**How it was caught and tested:**
+Identified during edge case analysis and formalised in an end-to-end regression test: `tests/test_e2e.py::TestRegressionStdZeroSilentFailure::test_constant_baseline_with_extreme_spike_scores_zero` and `test_nonzero_baseline_variance_with_spike_is_flagged`. This documents mathematically why gateways with completely stationary histories require variance to trigger 3-sigma detection.
 
-**How it was caught:**
-
-The end-to-end test `test_e2e_full_workflow()` passed a `datetime.date` object directly to the service (simulating how the API route parses an ISO date string from FastAPI's `date` type). The test failed with the timezone comparison error, exposing the bug.
+### 2. Timezone-Aware Timestamp Handling
+**Issue:**
+In initial draft of `ranking_service.py`, `week_start` was converted via `str(week_start)` before passing to `pd.Timestamp()`. Without explicit UTC timezone assignment matching the Parquet dataset's UTC timestamps, pandas raised `TypeError: Cannot compare tz-naive and tz-aware` at runtime during comparison.
 
 **Fix applied:**
-
-The `get_week_rankings()` method was corrected to always call `pd.Timestamp(str(monday), tz="UTC")` — matching the pattern already used correctly in the baseline — and a regression test `test_invalid_week_returns_404` was added to verify the service raises `WeekNotFoundError` for weeks not in the scored window, rather than a cryptic timezone error.
-
-**Regression test:**
-
-`tests/test_service.py::test_get_rankings_accepts_date_object` — verifies that passing a `datetime.date` object works correctly without a TypeError.
+Always normalize dates with `pd.Timestamp(week_date, tz="UTC")` throughout `ranking_service.py`. Fully covered in `tests/test_service.py` and `tests/test_api.py`.
 
 ---
 
