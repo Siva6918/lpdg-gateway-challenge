@@ -41,7 +41,12 @@ _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from baseline_3sigma import rank_week as _baseline_rank_week  # noqa: E402
+from baseline_3sigma import (  # noqa: E402
+    rank_week as _baseline_rank_week,
+    METRICS,
+    BASELINE_DAYS,
+    RECENT_DAYS,
+)
 
 VISITS_PER_WEEK = 15
 _MAX_REASON_CHARS = 300
