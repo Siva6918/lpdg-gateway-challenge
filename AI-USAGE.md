@@ -6,58 +6,120 @@ This document honestly records how AI tools were used during the development of 
 
 ## Tools Used
 
-- **Antigravity (Google DeepMind AI coding assistant):** Used as a pair-programming assistant throughout the project. Ran inside the IDE with access to the local filesystem.
+The following AI tools were used during the development of the project:
+
+* **Antigravity (Google DeepMind AI coding assistant):** Used as a pair-programming assistant within the IDE for implementation, debugging, project structure, and local development.
+* **ChatGPT (OpenAI):** Used for understanding requirements, discussing architecture and implementation approaches, debugging errors, reviewing code and tests, and explaining technical concepts.
+* **Claude (Anthropic):** Used for code review, reasoning about implementation details, identifying edge cases, and improving documentation and engineering decisions.
+
+These tools were used as development assistants. Their suggestions and generated code were reviewed, adapted, and tested against the actual project requirements.
 
 ---
 
 ## What AI Helped With
 
-| Area | How AI was used |
-|---|---|
-| **Architecture design** | Proposed the directory structure (`src/ranking/`, `src/services/`, `src/api/`) and the Strategy pattern for the ranking abstraction |
-| **Boilerplate code** | Generated initial versions of `src/main.py`, `src/api/routes.py`, `src/api/models.py`, and `src/services/ranking_service.py` |
-| **Documentation** | Drafted `DECISIONS.md`, this `AI-USAGE.md`, and the `README.md` documentation sections |
-| **Test scaffolding** | Suggested test fixture structure and initial test functions |
-| **Error handling patterns** | Suggested which HTTP status codes to use for which error conditions |
-| **DECISIONS.md content** | Helped articulate the engineering decisions in structured form |
+| Area                      | How AI was used                                                                                                                                                                                     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Architecture design**   | Antigravity, ChatGPT, and Claude were used to discuss and evaluate the directory structure (`src/ranking/`, `src/services/`, `src/api/`) and the Strategy pattern used for the ranking abstraction. |
+| **Boilerplate code**      | Antigravity and ChatGPT were used to generate and refine initial versions of `src/main.py`, `src/api/routes.py`, `src/api/models.py`, and `src/services/ranking_service.py`.                        |
+| **Baseline integration**  | ChatGPT and Claude were used to understand the existing `baseline_3sigma.py` implementation and reason about integrating it into the application architecture.                                      |
+| **Documentation**         | ChatGPT and Claude assisted with drafting and structuring `README.md`, `DECISIONS.md`, and `AI-USAGE.md`.                                                                                           |
+| **Test scaffolding**      | AI assistants suggested test fixture structures, test cases, and edge cases for the automated test suite.                                                                                           |
+| **Debugging**             | Antigravity, ChatGPT, and Claude were used to investigate runtime errors, test failures, timezone issues, and data-handling problems.                                                               |
+| **Error handling**        | AI assistants suggested appropriate HTTP status codes and error-handling patterns for API failure conditions.                                                                                       |
+| **Code review**           | ChatGPT and Claude were used to review implementation details and identify potential edge cases and inconsistencies.                                                                                |
+| **Engineering decisions** | AI assistance was used to structure and articulate engineering decisions documented in `DECISIONS.md`.                                                                                              |
 
 ---
 
 ## What Was Personally Reviewed
 
-- All generated code was read line by line before being committed
-- The baseline `baseline_3sigma.py` was manually read and understood before wrapping it
-- The ranking logic in `ThreeSigmaRanker` was traced against the original baseline to verify correctness
-- All test cases were reviewed to ensure they test real behavior, not just "does the function return something"
-- The validation script output was personally checked after each major change
-- `DECISIONS.md` decisions reflect actual choices made during development, not invented retrospectively
+AI-generated suggestions were reviewed during development rather than being accepted without validation.
+
+* The baseline `baseline_3sigma.py` was manually read and understood before wrapping it.
+* The ranking logic in `ThreeSigmaRanker` was traced against the original baseline to verify correctness.
+* Generated and modified code was reviewed and adjusted where necessary.
+* Test cases were reviewed to ensure they tested meaningful application behavior.
+* The validation script output was personally checked after major changes.
+* API behavior was manually tested using `curl` and the FastAPI `/docs` interactive page.
+* `DECISIONS.md` was checked against the actual implementation and development decisions.
 
 ---
 
-## How Generated Code Was Tested
+## How the Implementation Was Tested
 
-- `python validate_submission.py predictions.csv` was run after every change to the prediction pipeline
-- `pytest` was run after each phase to verify nothing regressed
-- The API was manually tested with `curl` and the FastAPI `/docs` interactive page
-- Edge cases (invalid week, non-existent gateway, missing data directory) were manually tested before and after writing the automated tests
+The project was validated through both automated and manual testing:
+
+* `python validate_submission.py predictions.csv` was run to validate the prediction pipeline.
+* `pytest` was run to verify the automated test suite and detect regressions.
+* The API was manually tested using `curl`.
+* The FastAPI `/docs` interactive interface was used to test API endpoints.
+* Edge cases such as invalid weeks, non-existent gateways, missing data directories, and unusual baseline conditions were tested.
+* Tests were re-run after debugging and implementation changes to ensure that existing functionality continued to work.
 
 ---
 
-## Real AI Mistakes and Edge Cases Caught and Corrected
+## AI-Assisted Issues and Edge Cases Identified and Corrected
 
-### 1. Constant Baseline std=0 Silent Anomaly Suppression
+### 1. Constant Baseline `std = 0`
+
 **Issue:**
-When writing the baseline wrapper and synthetic tests, we identified an edge case: if a gateway has zero variance across the 28-day baseline window (e.g., constant metric values throughout the full period, so standard deviation $\sigma = 0$), calculating the 3-sigma threshold $(mean + 3 \times std)$ without guardrails either divides by zero or evaluates conditions where an extreme surge could score zero flags if standard deviation is zero and condition requires $> mean + 3 \times std$. 
+
+During baseline analysis and synthetic testing, an edge case was identified where a gateway has zero variance across the 28-day baseline window.
+
+In this situation:
+
+`σ = 0`
+
+and the conventional 3-sigma threshold:
+
+`mean + 3 × std`
+
+becomes equal to the mean. This required explicit consideration because a completely stationary baseline does not provide meaningful variance for conventional 3-sigma anomaly detection.
 
 **How it was caught and tested:**
-Identified during edge case analysis and formalised in an end-to-end regression test: `tests/test_e2e.py::TestRegressionStdZeroSilentFailure::test_constant_baseline_with_extreme_spike_scores_zero` and `test_nonzero_baseline_variance_with_spike_is_flagged`. This documents mathematically why gateways with completely stationary histories require variance to trigger 3-sigma detection.
+
+This case was identified during edge-case analysis and formalized through regression tests:
+
+`tests/test_e2e.py::TestRegressionStdZeroSilentFailure::test_constant_baseline_with_extreme_spike_scores_zero`
+
+and
+
+`test_nonzero_baseline_variance_with_spike_is_flagged`
+
+These tests document the behavior of the implementation for zero-variance and non-zero-variance baselines.
+
+---
 
 ### 2. Timezone-Aware Timestamp Handling
+
 **Issue:**
-In initial draft of `ranking_service.py`, `week_start` was converted via `str(week_start)` before passing to `pd.Timestamp()`. Without explicit UTC timezone assignment matching the Parquet dataset's UTC timestamps, pandas raised `TypeError: Cannot compare tz-naive and tz-aware` at runtime during comparison.
+
+In an initial implementation of `ranking_service.py`, `week_start` could become timezone-naive before being compared with timestamps from the Parquet dataset.
+
+Because the dataset timestamps were timezone-aware UTC timestamps, pandas could raise:
+
+`TypeError: Cannot compare tz-naive and tz-aware`
 
 **Fix applied:**
-Always normalize dates with `pd.Timestamp(week_date, tz="UTC")` throughout `ranking_service.py`. Fully covered in `tests/test_service.py` and `tests/test_api.py`.
+
+Dates were normalized to UTC using timezone-aware pandas timestamps:
+
+`pd.Timestamp(week_date, tz="UTC")`
+
+This ensured that date comparisons used consistent timezone information.
+
+The behavior was subsequently covered by the service and API tests.
+
+---
+
+## Role of AI in the Final Implementation
+
+**Antigravity, ChatGPT, and Claude** were used as development assistants throughout different stages of the project. They contributed code suggestions, explanations, debugging assistance, testing ideas, code-review feedback, and documentation support.
+
+The final implementation was not accepted solely on the basis of AI output. The implementation was reviewed, modified where necessary, and validated using automated tests, the submission validation script, and manual API testing.
+
+This disclosure is intended to accurately represent the use of AI during the development of the project.
 
 ---
 
