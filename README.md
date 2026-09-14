@@ -83,9 +83,11 @@ A simple, offline-capable Web API that lets an operations team query the gateway
 
 | Endpoint | Description |
 |---|---|
-| `GET /rankings/{week}` | Get the 15 recommended gateways for a given week |
-| `GET /rankings/{week}/{gateway_id}` | Get the rank and explanation for a specific gateway |
+| `GET /rankings?week=YYYY-MM-DD` | Get the 15 recommended gateways for a given week |
+| `GET /gateways/{gateway_id}?week=YYYY-MM-DD` | Get the rank and explanation for a specific gateway |
 | `POST /rankings/run` | Re-run the ranking pipeline (e.g., after new data arrives) |
+| `GET /rankings/weeks` | List all valid scored Mondays |
+| `GET /strategies` | List available ranking algorithms |
 
 ### Architecture
 
@@ -175,6 +177,7 @@ LPDG-Innovation-Hub/
 ├── AI-USAGE.md                ← AI tool usage disclosure
 ├── requirements.txt           ← Python dependencies
 ├── .gitignore                 ← data/ excluded
+├── 23091A05T2.pdf             ← Participant resume (Registration ID: 23091A05T2)
 │
 ├── predictions.csv            ← Part 1 output (120 rows)
 ├── baseline_3sigma.py         ← Challenge-provided baseline (unchanged)
@@ -187,7 +190,7 @@ LPDG-Innovation-Hub/
 │   ├── services/
 │   └── api/
 │
-├── tests/                     ← Test suite
+├── tests/                     ← Test suite (59 tests)
 │
 └── docs/
     ├── RECORDING_SCRIPT.md
@@ -234,14 +237,29 @@ This is tested in `tests/test_new_data.py` with real parquet I/O.
 
 ---
 
+## Resume
+
+**Registration ID:** 23091A05T2
+
+Resume file: [`23091A05T2.pdf`](./23091A05T2.pdf) (included in repository root as required by participant instructions)
+
+Online resume: [View Resume](https://portfolio-azure-theta-94.vercel.app/Siva_Resume_SDE_1%20(1).pdf)
+
+---
+
 ## Submission Notes
 
-- Repository is **private** until final submission approval
-- Dataset is **not committed** (see `.gitignore`)
-- Recording: `[Add final 6–8 minute recording link before submission]`
+- **Deadline:** Wednesday, 16 September 2026, 20:59 IST
+- **Submission:** via official Google Form (to be completed manually)
+- **Repository must be PUBLIC** before submitting the Google Form
+- **Registration ID:** 23091A05T2
+- **Resume:** `23091A05T2.pdf` in repository root ✅
+- **Dataset:** not committed (see `.gitignore`) ✅
+- **Recording:** `[Add final 6–8 minute recording link before submission]`
 - See `docs/RECORDING_SCRIPT.md` for the demo script and `docs/FINAL_CHECKLIST.md` for the pre-submission checklist
 
 ---
 
-*Challenge: LPDG Innovation Hub Selection Challenge 2026*
-*Part 2 track: Software Development*
+*Challenge: LPDG Innovation Hub Selection Challenge 2026*  
+*Part 2 track: Software Development*  
+*Registration ID: 23091A05T2*
