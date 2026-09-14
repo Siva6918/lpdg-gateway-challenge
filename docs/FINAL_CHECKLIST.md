@@ -23,7 +23,7 @@ Each item has a verification command or inspection step.
 
 | # | Item | Command / How to Check | Status |
 |---|------|------------------------|--------|
-| 2.1 | All 55 tests pass | `python -m pytest` → `55 passed` | ✅ |
+| 2.1 | All 59 tests pass | `python -m pytest` → `59 passed` | ✅ |
 | 2.2 | App imports without error | `python -c "from src.main import app; print('OK')"` | ✅ |
 | 2.3 | `uvicorn src.main:app --reload` starts on port 8000 | Start server, visit `http://localhost:8000/` | ✅ |
 | 2.4 | `/docs` interactive page loads | Browser: `http://localhost:8000/docs` | ✅ |
@@ -33,16 +33,17 @@ Each item has a verification command or inspection step.
 | # | Endpoint | Expected Behaviour | Status |
 |---|----------|--------------------|--------|
 | 2.5 | `GET /` | `{"status": "ok", ...}` | ✅ |
-| 2.6 | `GET /rankings/{week}` valid week | 15 ranked gateways with reasons | ✅ |
-| 2.7 | `GET /rankings/{week}` invalid date | HTTP 400 | ✅ |
-| 2.8 | `GET /rankings/{week}` out-of-range week | HTTP 400 | ✅ |
-| 2.9 | `GET /rankings/{week}` unknown strategy | HTTP 400 | ✅ |
-| 2.10 | `GET /rankings/{week}/{gateway_id}` known gateway | Rank + diagnostics | ✅ |
-| 2.11 | `GET /rankings/{week}/{gateway_id}` unknown gateway | HTTP 404 | ✅ |
-| 2.12 | `POST /rankings/run` | Re-ranks, returns summary | ✅ |
-| 2.13 | `POST /rankings/run` with bad data_dir | HTTP 400 | ✅ |
+| 2.6 | `GET /rankings?week=...` valid week | 15 ranked gateways with reasons | ✅ |
+| 2.7 | `GET /rankings?week=...` invalid date | HTTP 400 | ✅ |
+| 2.8 | `GET /rankings?week=...` out-of-range week | HTTP 400 | ✅ |
+| 2.9 | `GET /rankings?week=...` unknown strategy | HTTP 400 | ✅ |
+| 2.10 | `GET /gateways/{id}?week=...` known gateway | Rank + diagnostics | ✅ |
+| 2.11 | `GET /gateways/{id}?week=...` unknown gateway | HTTP 404 | ✅ |
+| 2.12 | `POST /rankings/run` | Re-reads disk, returns summary | ✅ |
+| 2.13 | `POST /rankings/run` with bad data_dir | HTTP 503 | ✅ |
 | 2.14 | `GET /rankings/weeks` | List of 8 valid weeks | ✅ |
-| 2.15 | `GET /rankings/strategies` | Includes `three_sigma` as default | ✅ |
+| 2.15 | `GET /strategies` | Includes `three_sigma` as default | ✅ |
+| 2.16 | `/run` picks up NEW parquet without restart | `tests/test_new_data.py` — 4 tests | ✅ |
 
 ### Architecture Requirements
 

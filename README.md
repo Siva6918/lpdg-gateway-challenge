@@ -126,13 +126,19 @@ DATA_DIR=/path/to/other/data uvicorn src.main:app --reload
 
 ```bash
 # Get week's 15 recommendations
-curl http://localhost:8000/rankings/2026-02-02
+curl http://localhost:8000/rankings?week=2026-02-02
 
-# Explain a gateway's ranking
-curl http://localhost:8000/rankings/2026-02-02/0A2778A31BE3
+# Explain a gateway's ranking (why is it at rank 1?)
+curl http://localhost:8000/gateways/0A2778A31BE3?week=2026-02-02
 
-# Run the ranking pipeline again
+# Run the ranking pipeline again (picks up new data from disk without restart)
 curl -X POST http://localhost:8000/rankings/run
+
+# List all valid scored weeks
+curl http://localhost:8000/rankings/weeks
+
+# List available ranking strategies
+curl http://localhost:8000/strategies
 ```
 
 ### How to Run Tests
@@ -140,6 +146,13 @@ curl -X POST http://localhost:8000/rankings/run
 ```bash
 pytest tests/ -v
 ```
+
+This runs **59 tests** (no real dataset required):
+- `test_ranking.py` — ranking algorithm unit tests
+- `test_service.py` — service layer unit tests
+- `test_api.py` — all API endpoint tests
+- `test_e2e.py` — end-to-end pipeline tests and regression tests
+- `test_new_data.py` — new-data-without-restart tests (writes real parquet to disk)
 
 ### Alternate Data Directory
 
@@ -190,6 +203,27 @@ LPDG-Innovation-Hub/
 - The API does not auto-detect new data files; `POST /rankings/run` must be called manually after new data arrives
 - No authentication — intended as an internal operations tool only
 
+## New-Data-Without-Restart (Live Session Scenario)
+
+The API supports picking up new telemetry data **without restarting the process**:
+
+```bash
+# 1. Start the API
+uvicorn src.main:app --reload
+
+# 2. Keep it running — add a new parquet file to data/telemetry/
+#    (e.g., the unseen month from the live session)
+
+# 3. Call /run — no restart required
+curl -X POST http://localhost:8000/rankings/run
+# Response: { "status": "success", "rows_loaded": ..., "gateways_count": ... }
+
+# 4. Query the updated rankings
+curl http://localhost:8000/rankings?week=2026-04-06
+```
+
+This is tested in `tests/test_new_data.py` with real parquet I/O.
+
 ## What Another Two Weeks of Work Could Improve
 
 1. **Improved ranking algorithm:** A gradient boosting or LSTM model trained on the `engineer_review_2026-02.xlsx` expert labels, with proper temporal cross-validation
@@ -205,6 +239,7 @@ LPDG-Innovation-Hub/
 - Repository is **private** until final submission approval
 - Dataset is **not committed** (see `.gitignore`)
 - Recording: `[Add final 6–8 minute recording link before submission]`
+- See `docs/RECORDING_SCRIPT.md` for the demo script and `docs/FINAL_CHECKLIST.md` for the pre-submission checklist
 
 ---
 

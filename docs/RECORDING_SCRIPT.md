@@ -44,10 +44,12 @@ LPDG-Innovation-Hub/
 │   ├── ranking/          ← Strategy pattern abstraction
 │   ├── services/         ← Business logic layer
 │   └── api/              ← FastAPI routes + Pydantic models
-└── tests/                ← 55 tests across 4 test files
+└── tests/                ← 59 tests across 5 test files
 ```
 
 > "The architecture follows the Strategy pattern. The API routes depend on a `RankingStrategy` abstract interface. Swapping the algorithm — say, replacing 3-sigma with a gradient boost model — requires only creating a new class. The HTTP layer never changes. This is Decision 3 in DECISIONS.md."
+
+> "Notice the three required API capabilities: GET /rankings?week=... for this week's 15 gateways, GET /gateways/{id}?week=... for why a gateway is where it is, and POST /rankings/run to trigger a rerun when new data arrives."
 
 ---
 
@@ -73,7 +75,7 @@ predictions.csv: OK
 python -m pytest -v
 ```
 
-> "55 tests covering the ranking algorithm, the service layer, all API endpoints, and two regression tests for edge cases we found during development. All green."
+> "59 tests covering the ranking algorithm, the service layer, all API endpoints, regression tests for edge cases found during development, and — critically — 4 tests specifically verifying that POST /rankings/run picks up new parquet files from disk without restarting the process. All green."
 
 ---
 
@@ -99,22 +101,22 @@ curl -s http://localhost:8000/ | python -m json.tool
 
 #### 6b — Get this week's rankings
 ```bash
-curl -s "http://localhost:8000/rankings/2026-02-02" | python -m json.tool
+curl -s "http://localhost:8000/rankings?week=2026-02-02" | python -m json.tool
 ```
-> "The top 15 gateways for Week 1. Each entry has a rank, gateway ID, anomaly score, and a human-readable reason. The dispatcher reads this reason to know what to look for on site."
+> "GET /rankings?week=YYYY-MM-DD returns the top 15 gateways for that Monday. Each entry has a rank, gateway ID, anomaly score, and a human-readable reason. The dispatcher reads this reason to know what to look for on site."
 
 #### 6c — Explain a specific gateway
 ```bash
-# Use the first gateway_id from the rankings response above
-curl -s "http://localhost:8000/rankings/2026-02-02/0A2778A31BE3" | python -m json.tool
+# Use a gateway_id from the rankings response above
+curl -s "http://localhost:8000/gateways/0A2778A31BE3?week=2026-02-02" | python -m json.tool
 ```
-> "The explanation endpoint gives diagnostic detail: how many sigma above baseline, which metric triggered, over how many hours. This makes the recommendation explainable — the dispatcher isn't flying blind."
+> "GET /gateways/{id}?week=... gives full diagnostic detail: baseline mean and std per metric, 7-day totals and hourly peaks, and the number of breach hours per metric. This makes the recommendation explainable — the dispatcher isn't flying blind."
 
 #### 6d — Re-run the pipeline with new data
 ```bash
 curl -s -X POST "http://localhost:8000/rankings/run" | python -m json.tool
 ```
-> "This is the live session scenario. New data has been dropped in the `data/` directory. One POST reloads everything and reruns all 8 weeks. The response confirms how many weeks and gateways were scored."
+> "POST /rankings/run is the critical Round-2 requirement. New data has been dropped into data/telemetry/ — a new parquet file for the latest month. Calling /run invalidates the in-memory cache and re-reads from disk. No restart needed. The response confirms how many rows and gateways were loaded."
 
 #### 6e — Interactive API docs (switch to browser)
 Open `http://127.0.0.1:8000/docs`
@@ -125,11 +127,11 @@ Open `http://127.0.0.1:8000/docs`
 ### Section 7 — Wrap Up (≈ 30 seconds)
 
 > "To summarise:
->
+> 
 > - Part 1: 120-row `predictions.csv`, validated, using the provided baseline unchanged.
-> - Part 2: A clean FastAPI application with a Strategy-pattern ranking abstraction, a service layer separating business logic from HTTP concerns, Pydantic request/response validation, 55 automated tests, and one-command startup.
->
-> The five engineering decisions — why I used the baseline, why I chose this architecture, why the run endpoint is synchronous — are documented in `DECISIONS.md`. AI usage is disclosed in `AI-USAGE.md`.
+> - Part 2: A clean FastAPI application with a Strategy-pattern ranking abstraction, a service layer separating business logic from HTTP concerns, Pydantic request/response validation, 59 automated tests including end-to-end and new-data-without-restart tests, and one-command startup.
+> 
+> The five engineering decisions — why I used the baseline, why I chose Software Development, why the run endpoint is synchronous — are documented in `DECISIONS.md`. AI usage is disclosed in `AI-USAGE.md`.
 >
 > Thank you."
 
