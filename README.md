@@ -21,7 +21,7 @@ LPDG Innovation Hub Selection Challenge 2026 — Software Development
 
 FastAPI-based gateway ranking and diagnostic system featuring explainable weekly rankings, automated testing, API-based reruns, and support for newly added telemetry data.
 
-[Watch the Demo Video](https://drive.google.com/file/d/1NZrH55AloQklucSVIiltkQyHVW1Rp_fC/view?usp=sharing)
+[Watch the Demo Video](https://portfolio-azure-theta-94.vercel.app/workspace/work/lpdg_submission-mp4)
 
 Portfolio:  
 https://portfolio-azure-theta-94.vercel.app/workspace/work/lpdg_submission-mp4
