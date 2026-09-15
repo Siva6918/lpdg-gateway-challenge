@@ -1,15 +1,30 @@
 # LPDG Innovation Hub Selection Challenge 2026
 
-## Challenge Overview
+## Problem Statement
 
-The LPDG operations team can perform a maximum of **15 field visits per week**. The goal is to build a system that ranks gateways based on their telemetry behaviour and recommends the 15 highest-priority gateways to visit each week, with a human-readable reason for each recommendation.
+> Monitor gateway telemetry data and rank/select the top 15 gateways each week for field visits based on abnormal behavior and operational risk.
 
-The challenge has two parts:
+The LPDG operations team can perform a maximum of **15 field visits per week**. The goal is to build a system that analyzes gateway telemetry behaviour, identifies operational anomalies, and recommends the 15 highest-priority gateways to visit each week along with concise, human-readable explanations for each recommendation.
+
+The challenge consists of two parts:
 
 | Part | Description | Weight |
 |---|---|---|
 | **Part 1** | Gateway ranking: produce `predictions.csv` with 15 gateways × 8 weeks | 40% |
-| **Part 2** | Selected technical area: **Software Development** | 60% |
+| **Part 2** | **Software Development** — Build a web API to provide weekly top-15 gateway rankings, explain why a gateway was selected, and rerun the ranking when new telemetry data arrives. | 60% |
+
+---
+
+## Demo Video
+
+LPDG Innovation Hub Selection Challenge 2026 — Software Development
+
+FastAPI-based gateway ranking and diagnostic system featuring explainable weekly rankings, automated testing, API-based reruns, and support for newly added telemetry data.
+
+[Watch the Demo Video](https://drive.google.com/file/d/1NZrH55AloQklucSVIiltkQyHVW1Rp_fC/view?usp=sharing)
+
+Portfolio:  
+https://portfolio-azure-theta-94.vercel.app/workspace/work/lpdg_submission-mp4
 
 ---
 
@@ -19,23 +34,31 @@ The challenge has two parts:
 
 Part 1 uses the **provided 3-sigma baseline** (`baseline_3sigma.py`) unchanged. For each scored Monday, it:
 
-1. Takes the trailing 28 days of telemetry for each gateway
-2. Computes the mean and standard deviation of `offline_duration_sec`, `disconnection_cnt`, and `reboot_cnt`
-3. Flags any hour in the trailing 7 days where any metric exceeds 3 standard deviations above that gateway's own baseline
-4. Ranks gateways by flagged-hour count and selects the top 15
+1. Takes the trailing 28 days of telemetry for each gateway strictly prior to that Monday.
+2. Computes the mean ($\mu$) and standard deviation ($\sigma$) of `offline_duration_sec`, `disconnection_cnt`, and `reboot_cnt`.
+3. Flags any hour in the trailing 7 days where any metric exceeds $\mu + 3\sigma$ for that gateway.
+4. Ranks gateways by total flagged-hour count across the 7-day window and selects the top 15.
 
 The baseline was selected for Part 1 because:
-- The challenge permits it for Software Development candidates
-- It is transparent, explainable, and reproducible
-- The focus of this submission is Part 2 (see `DECISIONS.md` — Decision 2)
+- The challenge explicitly permits Software Development candidates to use the provided baseline unchanged and focus on Part 2.
+- It provides a transparent, explainable, and reproducible operational standard.
+- The rationale is formally documented in [`DECISIONS.md`](./DECISIONS.md) (Decision 1 & Decision 2).
 
 ### Scored Weeks
 
-Weeks 1–8: `2026-02-02` to `2026-03-23` (consecutive Mondays)
+Weeks 1–8: `2026-02-02` to `2026-03-23` (consecutive Mondays):
+- `2026-02-02`
+- `2026-02-09`
+- `2026-02-16`
+- `2026-02-23`
+- `2026-03-02`
+- `2026-03-09`
+- `2026-03-16`
+- `2026-03-23`
 
 ### Input Data
 
-Data must be placed in the `data/` directory at the project root (not committed to git):
+Telemetry data must be placed in the `data/` directory at the project root (excluded from version control via `.gitignore`):
 
 ```
 data/
@@ -44,8 +67,6 @@ data/
 ├── field_visits.csv    ← Historical visits
 └── ...
 ```
-
-The `data/` directory is intentionally excluded from version control (see `.gitignore`). A reviewer must supply it separately.
 
 ### How to Run Part 1
 
@@ -57,7 +78,7 @@ pip install -r requirements.txt
 python baseline_3sigma.py --data data
 
 # The repository ships with predictions.csv already generated
-# If you want to regenerate it:
+# To regenerate predictions.csv directly:
 python baseline_3sigma.py --data data --out predictions.csv
 
 # Validate the output
@@ -71,42 +92,49 @@ predictions.csv: OK
   15 ranked gateways for each of 8 weeks, 2026-02-02 to 2026-03-23
 ```
 
-**Output:** 120 rows — 15 gateways × 8 weeks ✅
+- **Output:** Exactly 120 rows — 15 gateways × 8 weeks ✅
+- **Columns:** `week_start`, `rank`, `gateway_id`, `score`, `reason` ✅
+- **Constraints:** Ranks 1–15 per week, no duplicates, valid non-empty reasons under character limit ✅
 
 ---
 
 ## Part 2 — Software Development
 
-A simple, offline-capable Web API that lets an operations team query the gateway ranking system.
+Software Development — Build a web API to provide weekly top-15 gateway rankings, explain why a gateway was selected, and rerun the ranking when new telemetry data arrives.
 
-### What the API Does
+### Web API Overview
 
-| Endpoint | Description |
-|---|---|
-| `GET /rankings?week=YYYY-MM-DD` | Get the 15 recommended gateways for a given week |
-| `GET /gateways/{gateway_id}?week=YYYY-MM-DD` | Get the rank and explanation for a specific gateway |
-| `POST /rankings/run` | Re-run the ranking pipeline (e.g., after new data arrives) |
-| `GET /rankings/weeks` | List all valid scored Mondays |
-| `GET /strategies` | List available ranking algorithms |
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Health check — confirms the service is operational |
+| `GET` | `/rankings?week=YYYY-MM-DD` | Retrieve top 15 ranked gateways for a given week Monday |
+| `GET` | `/rankings?week=YYYY-MM-DD&limit=N` | Retrieve top $N$ ranked gateways ($1 \le N \le 100$) |
+| `GET` | `/rankings?week=YYYY-MM-DD&strategy=three_sigma` | Retrieve rankings using a specified algorithm |
+| `GET` | `/rankings/weeks` | List all 8 valid scored Mondays |
+| `GET` | `/gateways/{gateway_id}?week=YYYY-MM-DD` | Diagnostic explanation: 28-day baseline, 7-day stats, breach counts |
+| `POST` | `/rankings/run` | Reload telemetry from disk and refresh in-memory cache without restart |
+| `GET` | `/strategies` | List registered ranking strategy algorithms |
+| `GET` | `/docs` | Interactive Swagger OpenAPI documentation and testing sandbox |
 
 ### Architecture
 
 ```
 src/
-├── main.py              ← FastAPI application entry point
-├── config.py            ← Data directory configuration
+├── main.py              ← FastAPI application entry point & health check
+├── config.py            ← Data directory path configuration (DATA_DIR support)
 ├── ranking/
-│   ├── base.py          ← RankingStrategy abstract interface
-│   ├── three_sigma.py   ← ThreeSigmaRanker implementation
+│   ├── base.py          ← Abstract RankingStrategy interface (Strategy pattern)
+│   ├── three_sigma.py   ← Concrete ThreeSigmaRanker implementation
 │   └── registry.py      ← Strategy registry (swap rankers without editing routes)
 ├── services/
-│   └── ranking_service.py  ← Business logic layer
+│   └── ranking_service.py  ← Business logic layer (caching, data loading, diagnostics)
 └── api/
     ├── models.py        ← Pydantic request/response schemas
-    └── routes.py        ← FastAPI route handlers (thin — no business logic)
+    └── routes.py        ← Thin FastAPI route handlers with error mapping
 ```
 
-**Key design principle:** The API routes depend on the `RankingStrategy` interface, not the concrete implementation. Adding a new ranking algorithm requires only creating a new class — no changes to routes.
+**Replaceable Strategy Architecture:**
+The API layer depends strictly on the `RankingStrategy` abstraction (`src/ranking/base.py`). Introducing a new ranking strategy (e.g., machine learning or gradient boosted trees) only requires creating a subclass and registering it in `src/ranking/registry.py`. No changes to API routes or handlers are needed.
 
 ### How to Run the API
 
@@ -114,152 +142,166 @@ src/
 # Install dependencies
 pip install -r requirements.txt
 
-# Start the API (uses data/ by default)
+# Start the API server (default data directory: data/)
 uvicorn src.main:app --reload
 
-# Use a different data directory
-DATA_DIR=/path/to/other/data uvicorn src.main:app --reload
-
-# API docs available at:
-# http://127.0.0.1:8000/docs
+# Start with a custom data directory
+DATA_DIR=/path/to/data uvicorn src.main:app --reload
 ```
+
+Interactive documentation is available at `http://127.0.0.1:8000/docs`.
 
 ### Example API Calls
 
 ```bash
-# Get week's 15 recommendations
-curl http://localhost:8000/rankings?week=2026-02-02
+# 1. Health check
+curl http://localhost:8000/
 
-# Explain a gateway's ranking (why is it at rank 1?)
-curl http://localhost:8000/gateways/0A2778A31BE3?week=2026-02-02
+# 2. Get top 15 recommendations for a week
+curl "http://localhost:8000/rankings?week=2026-02-02"
 
-# Run the ranking pipeline again (picks up new data from disk without restart)
+# 3. Get top 5 recommendations
+curl "http://localhost:8000/rankings?week=2026-02-02&limit=5"
+
+# 4. Request rankings using a specific strategy
+curl "http://localhost:8000/rankings?week=2026-02-02&strategy=three_sigma"
+
+# 5. Explain why a gateway was selected (diagnostic breakdown)
+curl "http://localhost:8000/gateways/0A2778A31BE3?week=2026-02-02"
+
+# 6. Re-run ranking pipeline when new telemetry arrives (no process restart)
 curl -X POST http://localhost:8000/rankings/run
 
-# List all valid scored weeks
+# 7. List available scored Mondays
 curl http://localhost:8000/rankings/weeks
 
-# List available ranking strategies
+# 8. List registered ranking strategies
 curl http://localhost:8000/strategies
 ```
+
+### Error Handling
+
+The API implements strict input validation and returns clear, structured HTTP responses:
+
+| HTTP Status | Condition | Example Request |
+|---|---|---|
+| `400 Bad Request` | Invalid date format | `GET /rankings?week=not-a-date` |
+| `400 Bad Request` | Week out of range or no telemetry | `GET /rankings?week=2020-01-06` |
+| `400 Bad Request` | Unknown ranking strategy | `GET /rankings?week=2026-02-02&strategy=unknown_algo` |
+| `404 Not Found` | Gateway ID not found in dataset | `GET /gateways/FFFFFFFFFFFF?week=2026-02-02` |
+| `503 Service Unavailable` | Telemetry directory missing or unreadable | When `DATA_DIR/telemetry` is not found on disk |
+| `500 Internal Server Error` | Unhandled pipeline exception | Unexpected file format or system failure |
+
+### New Data Without Process Restart (Live Session Scenario)
+
+The application fully supports dropping new telemetry Parquet files into `data/telemetry/` while the service is running:
+
+1. The service boots and caches current telemetry in memory.
+2. New telemetry files (e.g., an unseen evaluation month) are added to `data/telemetry/`.
+3. Calling `POST /rankings/run` invalidates the cached DataFrame, reads all files from disk, and reports updated row and gateway counts.
+4. Subsequent calls to `GET /rankings?week=YYYY-MM-DD` immediately utilize the newly ingested telemetry data.
+5. The system accommodates newly appearing gateway IDs as well as quiet/inactive gateways without crashing.
+
+This capability is verified by end-to-end tests in `tests/test_new_data.py`.
+
+### Memory & Data Handling
+
+- **Selective Column Loading:** Only the necessary columns (`gateway_id`, `ts_utc`, `offline_duration_sec`, `disconnection_cnt`, `reboot_cnt`) are loaded from Parquet, keeping memory usage minimal.
+- **Single In-Memory Copy:** A single cached DataFrame serves read requests without redundant copying.
+- **Laptop-Friendly:** Designed to run comfortably within standard 8–16 GB RAM developer machines.
 
 ### How to Run Tests
 
 ```bash
-pytest tests/ -v
+# Run the complete test suite
+pytest -v
 ```
 
-This runs **59 tests** (no real dataset required):
-- `test_ranking.py` — ranking algorithm unit tests
-- `test_service.py` — service layer unit tests
-- `test_api.py` — all API endpoint tests
-- `test_e2e.py` — end-to-end pipeline tests and regression tests
-- `test_new_data.py` — new-data-without-restart tests (writes real parquet to disk)
-
-### Alternate Data Directory
-
-```bash
-# CLI approach (baseline script)
-python baseline_3sigma.py --data /other/path
-
-# API approach (environment variable)
-DATA_DIR=/other/path uvicorn src.main:app --reload
-```
+The test suite contains **59 automated tests** using isolated synthetic fixtures (no external data required):
+- `tests/test_ranking.py` — unit tests for ranking logic and baseline conformity
+- `tests/test_service.py` — service layer caching, data orchestration, and exception handling
+- `tests/test_api.py` — API endpoints, query parameters, and error status codes
+- `tests/test_e2e.py` — full pipeline integration and regression tests (including `std = 0` edge-case handling)
+- `tests/test_new_data.py` — live new-data-without-restart tests with temporary disk Parquet fixtures
 
 ---
 
-## Project Structure
+## Repository Structure
 
 ```
 LPDG-Innovation-Hub/
-├── README.md                  ← This file
-├── DECISIONS.md               ← 5 engineering decisions
-├── AI-USAGE.md                ← AI tool usage disclosure
-├── requirements.txt           ← Python dependencies
-├── .gitignore                 ← data/ excluded
+├── README.md                  ← Comprehensive project documentation
+├── DECISIONS.md               ← 5 engineering decisions, limitations, and future roadmap
+├── AI-USAGE.md                ← Transparent AI tool usage disclosure and corrections
+├── requirements.txt           ← Pinned Python dependencies
+├── .gitignore                 ← Excludes data/, .venv/, cache, and .env
 ├── 23091A05T2.pdf             ← Participant resume (Registration ID: 23091A05T2)
 │
-├── predictions.csv            ← Part 1 output (120 rows)
-├── baseline_3sigma.py         ← Challenge-provided baseline (unchanged)
-├── validate_submission.py     ← Challenge-provided validator (unchanged)
+├── predictions.csv            ← Official Part 1 submission output (120 rows)
+├── baseline_3sigma.py         ← Challenge-provided baseline script (unmodified)
+├── validate_submission.py     ← Challenge-provided validator script
 │
-├── src/                       ← Part 2 Software Development source
-│   ├── main.py
-│   ├── config.py
-│   ├── ranking/
+├── src/                       ← Part 2 Software Development source code
+│   ├── main.py                ← FastAPI entry point and health check
+│   ├── config.py              ← Environment configuration & paths
+│   ├── ranking/               ← Ranking strategies & registry
+│   │   ├── base.py            ← Strategy abstract interface
+│   │   ├── three_sigma.py     ← 3-sigma ranker implementation
+│   │   └── registry.py        ← Algorithm registry
 │   ├── services/
+│   │   └── ranking_service.py ← Service layer: caching, loading, diagnostics
 │   └── api/
+│       ├── models.py          ← Pydantic schemas
+│       └── routes.py          ← Route handlers with error handling
 │
-├── tests/                     ← Test suite (59 tests)
+├── tests/                     ← Automated test suite (59 tests)
+│   ├── conftest.py            ← Synthetic test data fixtures
+│   ├── test_ranking.py        ← Algorithm unit tests
+│   ├── test_service.py        ← Service unit tests
+│   ├── test_api.py            ← Route and error handling tests
+│   ├── test_e2e.py            ← End-to-end and regression tests
+│   └── test_new_data.py       ← New-data-without-restart tests
 │
 └── docs/
-    ├── RECORDING_SCRIPT.md
-    └── FINAL_CHECKLIST.md
+    ├── RECORDING_SCRIPT.md    ← Video demonstration script
+    └── FINAL_CHECKLIST.md     ← Pre-submission verification checklist
 ```
 
 ---
 
 ## Limitations
 
-- The ranking algorithm is the provided 3-sigma baseline; no ML improvement was made
-- `POST /rankings/run` is synchronous — on very large datasets it may take up to 60 seconds
-- The API does not auto-detect new data files; `POST /rankings/run` must be called manually after new data arrives
-- No authentication — intended as an internal operations tool only
-
-## New-Data-Without-Restart (Live Session Scenario)
-
-The API supports picking up new telemetry data **without restarting the process**:
-
-```bash
-# 1. Start the API
-uvicorn src.main:app --reload
-
-# 2. Keep it running — add a new parquet file to data/telemetry/
-#    (e.g., the unseen month from the live session)
-
-# 3. Call /run — no restart required
-curl -X POST http://localhost:8000/rankings/run
-# Response: { "status": "success", "rows_loaded": ..., "gateways_count": ... }
-
-# 4. Query the updated rankings
-curl http://localhost:8000/rankings?week=2026-04-06
-```
-
-This is tested in `tests/test_new_data.py` with real parquet I/O.
-
-## What Another Two Weeks of Work Could Improve
-
-1. **Improved ranking algorithm:** A gradient boosting or LSTM model trained on the `engineer_review_2026-02.xlsx` expert labels, with proper temporal cross-validation
-2. **Weighted multi-metric scoring:** Combine `reboot_importance` and `no_conn_importance` fields from the dataset as supplementary signals
-3. **File-system watcher:** Auto-trigger reranking when new parquet files appear in `data/telemetry/`
-4. **Authentication:** Simple API key middleware to control access
-5. **Caching layer:** Cache ranking results per week to avoid re-running for identical data
+1. **Anomaly Detection Scope:** The current implementation uses the 3-sigma anomaly baseline; it detects sudden statistical spikes in offline duration, reboots, and disconnections, but does not capture gradual linear degradation.
+2. **Synchronous Reranking:** `POST /rankings/run` executes synchronously. For the challenge dataset (~1.4M rows), it completes in under 30 seconds on a laptop, but enterprise-scale datasets would benefit from an asynchronous job queue (e.g., Celery/Redis).
+3. **Manual Trigger for Reload:** Telemetry reload is triggered via `POST /rankings/run`; automated filesystem event polling is not running in the background.
+4. **Internal Operational Tool:** No authentication or rate limiting is enabled; intended strictly for trusted internal dispatch environments.
 
 ---
 
-## Resume
+## What Another Two Weeks Would Improve
 
-**Registration ID:** 23091A05T2
-
-Resume file: [`23091A05T2.pdf`](./23091A05T2.pdf) (included in repository root as required by participant instructions)
-
-Online resume: [View Resume](https://portfolio-azure-theta-94.vercel.app/Siva_Resume_SDE_1%20(1).pdf)
+1. **Supervised ML Model:** Train an XGBoost or LightGBM model utilizing `engineer_review_2026-02-15.xlsx` expert labels with strict temporal validation against the business cost function.
+2. **Multi-Metric Composite Scoring:** Incorporate supplementary signals (`reboot_importance`, `no_conn_importance`) into ranking tie-breaking.
+3. **Automated Filesystem Watcher:** Ingest new Parquet partitions automatically via a background watcher daemon.
+4. **Embedded Results Store:** Cache precomputed weekly rankings in DuckDB or SQLite for zero-latency retrieval.
+5. **Security & Authentication:** Add lightweight API key authentication and CORS configuration.
 
 ---
 
-## Submission Notes
+## Participant & Submission Information
 
-- **Deadline:** Wednesday, 16 September 2026, 20:59 IST
-- **Submission:** via official Google Form (to be completed manually)
-- **Repository must be PUBLIC** before submitting the Google Form
-- **Registration ID:** 23091A05T2
-- **Resume:** `23091A05T2.pdf` in repository root ✅
-- **Dataset:** not committed (see `.gitignore`) ✅
-- **Recording:** `[Add final 6–8 minute recording link before submission]`
-- See `docs/RECORDING_SCRIPT.md` for the demo script and `docs/FINAL_CHECKLIST.md` for the pre-submission checklist
+- **Registration ID:** `23091A05T2`
+- **Official Email:** `23091a05t2@rgmcet.edu.in`
+- **Resume File:** [`23091A05T2.pdf`](./23091A05T2.pdf) (located at repository root)
+- **Online Resume:** [View Resume](https://portfolio-azure-theta-94.vercel.app/Siva_Resume_SDE_1%20(1).pdf)
+- **Submission Form:** [Google Form](https://forms.gle/qHZqsrRPGWf8ja5S6)
+- **Submission Deadline:** **Wednesday, 16 September 2026, 20:00 IST**
+- **Evaluation:** **18 September 2026, 9:30 AM onwards at RGMCET campus** (venue arrival by 9:00 AM)
+- **GitHub Repository Visibility:** Must be set to **PUBLIC** prior to form submission.
+- **Dataset Policy:** The raw `data/` directory is not committed (see `.gitignore`).
 
 ---
 
 *Challenge: LPDG Innovation Hub Selection Challenge 2026*  
-*Part 2 track: Software Development*  
-*Registration ID: 23091A05T2*
+*Track: Software Development*  
+*Candidate: 23091A05T2*

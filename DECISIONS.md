@@ -92,4 +92,25 @@ The challenge brief specifies that "new data will be placed in the mounted `data
 
 ---
 
-*Last updated: 2026-09-11*
+## System Limitations — "What It Cannot Do"
+
+1. **Subtle Degradation Detection:** The ranking algorithm is the provided 3-sigma anomaly detector. It cannot detect gradual, non-spiking degradation (e.g., progressive memory leaks or slow signal loss) where telemetry drifts slowly without breaching 3 standard deviations from its own rolling mean.
+2. **Autonomous Background Polling:** The API does not run an active filesystem watcher daemon; it will not autonomously detect new Parquet files placed in `data/telemetry/`. The operator or upstream orchestration must explicitly trigger `POST /rankings/run` to reload telemetry from disk without restarting the process.
+3. **Multi-User Authentication & Rate Limiting:** The API is unauthenticated and without rate limits, designed strictly as a lightweight, local/internal operations tool for the gateway dispatch team.
+4. **Asynchronous Long-Running Job Queue:** Reranking via `POST /rankings/run` runs synchronously. While it finishes in under 30 seconds for 1.4M rows on standard laptop hardware, scaling to hundreds of millions of rows would require an asynchronous worker queue (e.g., Celery/Redis).
+
+---
+
+## What Another Two Weeks of Work Would Improve
+
+If allocated an additional two weeks of development time and access to subsequent operational data, the following enhancements would be prioritized:
+
+1. **Supervised ML Model Calibration:** Train and cross-validate an XGBoost or LightGBM model utilizing the `engineer_review_2026-02-15.xlsx` expert labels, calibrating against the challenge business cost model (weighing field visit costs against failure penalties).
+2. **Multi-Metric Weighted Scoring:** Incorporate supplementary signals from the dataset (such as `reboot_importance`, `no_conn_importance`, and signal strength metrics) to refine priority ordering when breach counts tie.
+3. **Filesystem Watcher / Ingestion Webhook:** Implement an automated file-system watcher (e.g. `watchdog`) or ingestion webhook to trigger cache invalidation and reranking automatically as soon as a new Parquet partition lands in `data/telemetry/`.
+4. **Persistent Result Caching & Storage:** Persist precomputed weekly rankings in an embedded database (e.g., SQLite or DuckDB) to eliminate recomputation across duplicate requests and provide immediate response times.
+5. **Role-Based Access & Security:** Add lightweight API key authentication and CORS configuration to secure the dispatch API in enterprise deployments.
+
+---
+
+*Last updated: 2026-09-16*

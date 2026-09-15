@@ -95,26 +95,26 @@ Open a **second terminal** for curl commands. Keep server terminal visible.
 
 #### 6a — Health check
 ```bash
-curl -s http://localhost:8000/ | python -m json.tool
+curl.exe -s http://localhost:8000/ | python -m json.tool
 ```
 > "Simple health check confirms the service is up."
 
 #### 6b — Get this week's rankings
 ```bash
-curl -s "http://localhost:8000/rankings?week=2026-02-02" | python -m json.tool
+curl.exe -s "http://localhost:8000/rankings?week=2026-02-02" | python -m json.tool
 ```
 > "GET /rankings?week=YYYY-MM-DD returns the top 15 gateways for that Monday. Each entry has a rank, gateway ID, anomaly score, and a human-readable reason. The dispatcher reads this reason to know what to look for on site."
 
 #### 6c — Explain a specific gateway
 ```bash
 # Use a gateway_id from the rankings response above
-curl -s "http://localhost:8000/gateways/0A2778A31BE3?week=2026-02-02" | python -m json.tool
+curl.exe -s "http://localhost:8000/gateways/0A2778A31BE3?week=2026-02-02" | python -m json.tool
 ```
 > "GET /gateways/{id}?week=... gives full diagnostic detail: baseline mean and std per metric, 7-day totals and hourly peaks, and the number of breach hours per metric. This makes the recommendation explainable — the dispatcher isn't flying blind."
 
 #### 6d — Re-run the pipeline with new data
 ```bash
-curl -s -X POST "http://localhost:8000/rankings/run" | python -m json.tool
+curl.exe -s -X POST "http://localhost:8000/rankings/run" | python -m json.tool
 ```
 > "POST /rankings/run is the critical Round-2 requirement. New data has been dropped into data/telemetry/ — a new parquet file for the latest month. Calling /run invalidates the in-memory cache and re-reads from disk. No restart needed. The response confirms how many rows and gateways were loaded."
 
@@ -137,12 +137,11 @@ Open `http://127.0.0.1:8000/docs`
 
 ---
 
-## Post-Recording
+## Demo Video Resources
 
-- [ ] Trim the video to 6–8 minutes
-- [ ] Upload to the submission platform
-- [ ] Add the video link to `README.md` (`Submission Notes` section)
+- **Google Drive Link:** [Watch Demo Video](https://drive.google.com/file/d/1NZrH55AloQklucSVIiltkQyHVW1Rp_fC/view?usp=sharing)
+- **Portfolio Work Page:** https://portfolio-azure-theta-94.vercel.app/workspace/work/lpdg_submission-mp4
 
 ---
 
-*Last updated: 2026-09-11*
+*Last updated: 2026-09-16*
