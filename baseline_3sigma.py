@@ -71,7 +71,13 @@ def rank_week(frame: pd.DataFrame, monday: dt.date) -> pd.DataFrame:
         flagged_hours=("flagged", "sum"),
         worst_metric=("worst_metric", lambda s: next((v for v in s if v), "")),
     )
-    return grouped.sort_values("flagged_hours", ascending=False).reset_index()
+    # Primary sort: flagged_hours descending.
+    # Deterministic secondary tie-breaker: gateway_id ascending.
+    return (
+        grouped.reset_index()
+        .sort_values(by=["flagged_hours", "gateway_id"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
 
 
 def build_predictions(frame: pd.DataFrame) -> pd.DataFrame:

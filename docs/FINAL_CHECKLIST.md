@@ -25,7 +25,7 @@
 - [x] **ranks 1–15** — [VERIFIED] Ranks 1 to 15 per week without gaps or duplicates.
 - [x] **reasons valid** — [VERIFIED] All reason strings non-empty and within length limits.
 - [x] **validator passes** — [VERIFIED] `python validate_submission.py predictions.csv` passes with `OK`.
-- [x] **baseline unchanged** — [VERIFIED] `baseline_3sigma.py` is identical to original baseline setup.
+- [x] **baseline deterministic** — [VERIFIED] `baseline_3sigma.py` implements deterministic tie-breaking (primary `flagged_hours` descending, secondary `gateway_id` ascending).
 - [x] **data not committed** — [VERIFIED] `data/` excluded in `.gitignore` and untracked in `git ls-files data/`.
 
 ---
@@ -33,8 +33,8 @@
 ## DOCUMENTATION
 
 - [x] **README.md** — [VERIFIED] Complete with required problem statement, track description, endpoints, and setup.
-- [x] **DECISIONS.md** — [VERIFIED] Contains 5 engineering decisions, trade-offs, and Track selection rationale.
-- [x] **AI-USAGE.md** — [VERIFIED] Discloses Antigravity, ChatGPT, Claude, and documents real caught errors (`std=0`, timestamp tz).
+- [x] **DECISIONS.md** — [VERIFIED] Contains 6 engineering decisions, trade-offs, and Track selection rationale.
+- [x] **AI-USAGE.md** — [VERIFIED] Discloses Antigravity, ChatGPT, Claude, and documents real caught errors (`std=0`, timestamp tz, offline Swagger).
 - [x] **limitations** — [VERIFIED] Documented in both `README.md` and `DECISIONS.md`.
 - [x] **two-week improvement plan** — [VERIFIED] Documented in both `README.md` and `DECISIONS.md`.
 - [x] **API documentation** — [VERIFIED] Comprehensive endpoint tables and curl examples in `README.md`, plus `/docs` OpenAPI.
@@ -46,18 +46,19 @@
 
 ## PART 2: Software Development
 
-- [x] **API works** — [VERIFIED] Tested via FastAPI TestClient and pytest suite (`59 passed`).
+- [x] **API works** — [VERIFIED] Tested via FastAPI TestClient and pytest suite (`73 passed`).
 - [x] **weekly top 15** — [VERIFIED] `GET /rankings?week=YYYY-MM-DD` returns 15 gateways with scores and reasons.
 - [x] **gateway explanation** — [VERIFIED] `GET /gateways/{gateway_id}?week=YYYY-MM-DD` provides diagnostic breakdown.
 - [x] **rerun endpoint** — [VERIFIED] `POST /rankings/run` reloads telemetry and refreshes cache.
-- [x] **error handling** — [VERIFIED] 400 (invalid date/week/strategy), 404 (unknown gateway), 503 (missing data dir) covered and tested.
+- [x] **error handling** — [VERIFIED] 400 (invalid date/week/strategy/no data in window), 404 (unknown gateway), 422 (corrupt/empty telemetry), 503 (missing data dir) covered and tested.
+- [x] **determinism tests** — [VERIFIED] `tests/test_determinism.py` verifies repeated rankings, row-order invariance, and tie-breaking.
 - [x] **E2E tests** — [VERIFIED] `tests/test_e2e.py` verifies end-to-end workflow.
-- [x] **regression test** — [VERIFIED] `tests/test_e2e.py::TestRegressionStdZeroSilentFailure` tests `std=0` edge case.
+- [x] **regression test** — [VERIFIED] `tests/test_e2e.py::TestRegressionStdZeroSilentFailure` tests `std=0` edge case; `tests/test_api.py::TestOfflineSwagger` verifies zero CDN URLs in `/docs`.
 - [x] **synthetic fixtures** — [VERIFIED] Tests run on fast synthetic data without requiring 104 MB challenge files.
 - [x] **new data without restart** — [VERIFIED] `tests/test_new_data.py` verifies loading new month parquet on disk without restarting process.
 - [x] **new gateway IDs handled** — [VERIFIED] Unseen gateway IDs in new data are ingested without crashes.
 - [x] **replaceable ranking strategy** — [VERIFIED] Abstract `RankingStrategy` and `registry.py` decouple algorithms from route handlers.
-- [x] **API docs** — [VERIFIED] FastAPI Swagger UI available at `/docs`.
+- [x] **API docs offline** — [VERIFIED] FastAPI Swagger UI available at `/docs` backed by local bundled assets (`src/static/`).
 
 ---
 
@@ -79,4 +80,4 @@
 
 ---
 
-*Last verified: 2026-09-16*
+*Last verified: 2026-09-17*

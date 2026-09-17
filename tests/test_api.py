@@ -4,6 +4,7 @@ Integration tests for FastAPI API endpoints.
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -88,6 +89,17 @@ class TestGetRankings:
         response = test_client.get("/rankings?week=2026-02-02&strategy=unknown_algo")
         assert response.status_code == 400
 
+    def test_rankings_corrupt_data_returns_422(self):
+        service = RankingService(telemetry_frame=pd.DataFrame())
+        app.dependency_overrides[get_ranking_service] = lambda: service
+        client = TestClient(app)
+        try:
+            response = client.get("/rankings?week=2026-02-02")
+            assert response.status_code == 422
+            assert "empty" in response.json()["detail"].lower()
+        finally:
+            app.dependency_overrides.clear()
+
 
 class TestGetGatewayExplanation:
     def test_known_gateway_returns_200(self, test_client: TestClient):
@@ -144,6 +156,18 @@ class TestRunPipeline:
         try:
             response = client.post("/rankings/run")
             assert response.status_code == 503
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_run_pipeline_corrupt_data_returns_422(self):
+        """When data frame is corrupt or empty, run returns 422."""
+        service = RankingService(telemetry_frame=pd.DataFrame())
+        app.dependency_overrides[get_ranking_service] = lambda: service
+        client = TestClient(app)
+        try:
+            response = client.post("/rankings/run")
+            assert response.status_code == 422
+            assert "empty" in response.json()["detail"].lower()
         finally:
             app.dependency_overrides.clear()
 

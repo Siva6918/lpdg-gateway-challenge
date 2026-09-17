@@ -258,11 +258,21 @@ The API implements strict input validation and returns clear, structured HTTP re
 | HTTP Status | Condition | Example Request |
 |---|---|---|
 | `400 Bad Request` | Invalid date format | `GET /rankings?week=not-a-date` |
-| `400 Bad Request` | Week out of range or no telemetry | `GET /rankings?week=2020-01-06` |
+| `400 Bad Request` | Week out of range or no telemetry in window | `GET /rankings?week=2020-01-06` |
 | `400 Bad Request` | Unknown ranking strategy | `GET /rankings?week=2026-02-02&strategy=unknown_algo` |
 | `404 Not Found` | Gateway ID not found in dataset | `GET /gateways/FFFFFFFFFFFF?week=2026-02-02` |
+| `422 Unprocessable Content` | Malformed, corrupt, or empty telemetry data | Missing required schema columns or empty Parquet dataset |
 | `503 Service Unavailable` | Telemetry directory missing or unreadable | When `DATA_DIR/telemetry` is not found on disk |
 | `500 Internal Server Error` | Unhandled pipeline exception | Unexpected file format or system failure |
+
+### Robustness and Determinism
+
+The ranking pipeline and service architecture implement strict reliability and reproducibility controls:
+
+- **Deterministic Tie-Breaking:** Rankings sort primarily by anomaly score (`flagged_hours`) descending. In case of tied scores, ties are resolved deterministically using `gateway_id` ascending. This guarantees that repeated runs on identical telemetry produce 100% bit-for-bit identical gateway ordering.
+- **Robust Telemetry Validation:** The service deliberately distinguishes between missing directory paths (`DataNotFoundError` → HTTP 503), corrupt/malformed/empty datasets (`CorruptDataError` → HTTP 422), and valid datasets where the requested 28-day baseline window contains no records (`NoDataInWindowError` → HTTP 400). It never silently manufactures valid rankings from empty or corrupt data.
+- **Rerun & Cache Refresh Behavior:** `POST /rankings/run` explicitly invalidates the in-memory cache and reloads telemetry from disk. When underlying data is unchanged, repeated executions remain strictly identical. When new Parquet files are dropped into `data/telemetry/`, the running process ingests the new data without requiring a process restart.
+- **Comprehensive Offline Verification:** 73 automated tests verify ranking determinism, order invariance across shuffled rows, edge-case tie-breaking, error codes, and offline Swagger asset delivery.
 
 ### New Data Without Process Restart (Live Session Scenario)
 
@@ -289,12 +299,13 @@ This capability is verified by end-to-end tests in `tests/test_new_data.py`.
 pytest -v
 ```
 
-The test suite contains **63 automated tests** using isolated synthetic fixtures (runs 100% offline with zero external data or network calls required):
-- `tests/test_ranking.py` — unit tests for ranking logic and baseline conformity
-- `tests/test_service.py` — service layer caching, data orchestration, and exception handling
-- `tests/test_api.py` — API endpoints, query parameters, error status codes, and offline Swagger UI regression tests
-- `tests/test_e2e.py` — full pipeline integration and regression tests (including `std = 0` edge-case handling)
-- `tests/test_new_data.py` — live new-data-without-restart tests with temporary disk Parquet fixtures
+The test suite contains **73 automated tests** using isolated synthetic fixtures (runs 100% offline with zero external data or network calls required):
+- `tests/test_ranking.py` — unit tests for ranking logic and baseline conformity (21 tests)
+- `tests/test_service.py` — service layer caching, data orchestration, corrupt/missing data validation, and exception handling (14 tests)
+- `tests/test_api.py` — API endpoints, query parameters, error status codes, and offline Swagger UI regression tests (24 tests)
+- `tests/test_e2e.py` — full pipeline integration and regression tests including `std = 0` edge-case handling (5 tests)
+- `tests/test_new_data.py` — live new-data-without-restart tests with temporary disk Parquet fixtures (4 tests)
+- `tests/test_determinism.py` — deterministic tie-breaking, row-order invariance, and cache reload tests (5 tests)
 
 ---
 
@@ -303,14 +314,14 @@ The test suite contains **63 automated tests** using isolated synthetic fixtures
 ```
 LPDG-Innovation-Hub/
 ├── README.md                  ← Comprehensive project documentation
-├── DECISIONS.md               ← 5 engineering decisions, limitations, and future roadmap
+├── DECISIONS.md               ← 6 engineering decisions, limitations, and future roadmap
 ├── AI-USAGE.md                ← Transparent AI tool usage disclosure and corrections
 ├── requirements.txt           ← Pinned Python dependencies
 ├── .gitignore                 ← Excludes data/, .venv/, cache, and .env
 ├── 23091A05T2.pdf             ← Participant resume (Registration ID: 23091A05T2)
 │
 ├── predictions.csv            ← Official Part 1 submission output (120 rows)
-├── baseline_3sigma.py         ← Challenge-provided baseline script (unmodified)
+├── baseline_3sigma.py         ← Challenge-provided baseline script (with deterministic tie-breaking)
 ├── validate_submission.py     ← Challenge-provided validator script
 │
 ├── src/                       ← Part 2 Software Development source code
@@ -330,13 +341,14 @@ LPDG-Innovation-Hub/
 │       ├── models.py          ← Pydantic schemas
 │       └── routes.py          ← Route handlers with error handling
 │
-├── tests/                     ← Automated test suite (63 tests)
+├── tests/                     ← Automated test suite (73 tests)
 │   ├── conftest.py            ← Synthetic test data fixtures
 │   ├── test_ranking.py        ← Algorithm unit tests
 │   ├── test_service.py        ← Service unit tests
 │   ├── test_api.py            ← Route, error handling, and offline docs regression tests
 │   ├── test_e2e.py            ← End-to-end and regression tests
-│   └── test_new_data.py       ← New-data-without-restart tests
+│   ├── test_new_data.py       ← New-data-without-restart tests
+│   └── test_determinism.py    ← Determinism, order-invariance, and tie-break tests
 │
 └── docs/
     ├── RECORDING_SCRIPT.md    ← Video demonstration script

@@ -32,7 +32,7 @@ The challenge brief explicitly states that Software Development, DevOps, and Dat
 - **DevOps:** Valuable, but containerisation and CI/CD are infrastructure concerns that don't directly serve the operational use case.
 
 **Why Software Development was chosen:**
-The core problem is an operational tool that a dispatcher uses every Monday. A clean, well-tested Web API is the most natural and practical solution — it directly serves the business need (query this week's gateways, ask why a gateway is ranked where it is, trigger a rerun when new data arrives). This track allows demonstrating clean code architecture (abstraction, separation of concerns, testability) while delivering something genuinely useful. The live session requirement — "drop in a new month of data and run it" — aligns perfectly with an API that accepts a `--data` override.
+The core problem is an operational tool that a dispatcher uses every Monday. A clean, well-tested Web API is the most natural and practical solution — it directly serves the business need (query this week's gateways, ask why a gateway is ranked where it is, trigger a rerun when new data arrives). This track allows demonstrating clean code architecture (abstraction, separation of concerns, testability) while delivering something genuinely useful. The live session requirement — "drop in a new month of data and run it" — aligns directly with the filesystem-based design and configurable `DATA_DIR`, allowing the reviewer to point the application to the appropriate data directory without modifying the ranking code.
 
 **Trade-offs:**
 - Does not improve ranking accuracy beyond the baseline.
@@ -50,7 +50,7 @@ The core problem is an operational tool that a dispatcher uses every Monday. A c
 - Using Python `Protocol` (structural subtyping) instead of `ABC`
 
 **Why an ABC was chosen:**
-The challenge explicitly requires that "adding another ranking implementation should not require editing the API handler." An ABC enforces this contract at the class level — any new ranker must implement the required methods, and the existing API code need not change. This is the classic Strategy pattern. `ABC` was preferred over `Protocol` because it gives explicit enforcement (calling an unimplemented method raises `NotImplementedError`) and is more familiar to developers coming from Java/C# backgrounds, making the intent clearer.
+The challenge explicitly requires that "adding another ranking implementation should not require editing the API handler." An ABC enforces this contract at the class level — any new ranker must implement the required methods, and the existing API code need not change. This is the classic Strategy pattern. `ABC` was preferred over `Protocol` because it provides explicit enforcement at the class level: a concrete ranking strategy must implement the required abstract methods before it can be instantiated (instantiating an incomplete subclass raises `TypeError`). It also makes the intended Strategy pattern clear and is familiar to developers coming from Java/C# backgrounds.
 
 **Trade-offs:**
 - Adds a small amount of indirection compared to calling the function directly.
@@ -77,7 +77,7 @@ The challenge explicitly says "the expected workload is small." The full pipelin
 
 ## Decision 5: Data is Loaded from the Filesystem, Not Uploaded via HTTP
 
-**Decision:** The API reads telemetry data from a local `data/` directory (configurable via environment variable or startup flag). Users do not upload data through HTTP.
+**Decision:** The API reads telemetry data from a local `data/` directory (configurable via the `DATA_DIR` environment variable). Users do not upload data through HTTP.
 
 **Alternatives considered:**
 - HTTP file upload endpoint where a user posts a Parquet file
@@ -85,10 +85,29 @@ The challenge explicitly says "the expected workload is small." The full pipelin
 - Accepting data as a JSON payload in the request body
 
 **Why filesystem was chosen:**
-The challenge brief specifies that "new data will be placed in the mounted `data/` directory." This is explicitly the data delivery mechanism. The challenge also requires offline execution with no internet dependency. Therefore, the design must assume data arrives via filesystem, not network. An HTTP upload would add complexity (multipart form handling, server-side storage) without matching the described operational workflow. The `--data` flag (and `DATA_DIR` environment variable) allows a reviewer to point the application at any directory on their machine without modifying code.
+The challenge brief specifies that "new data will be placed in the mounted `data/` directory." This is explicitly the data delivery mechanism. The challenge also requires offline execution with no internet dependency. Therefore, the design must assume data arrives via filesystem, not network. An HTTP upload would add complexity (multipart form handling, server-side storage) without matching the described operational workflow. The configurable `DATA_DIR` environment variable (defaulting to `./data`) allows a reviewer to point the application at any directory on their machine without modifying code.
 
 **Trade-offs:**
-- The service must be restarted (or `POST /rankings/run` must be called) after new data arrives — it does not auto-detect new files. This is a known and acceptable limitation for a v1 internal tool.
+- The service does not automatically detect new files. After new data arrives, the operator must explicitly trigger `POST /rankings/run` to reload the data and recompute the rankings. A process restart is not required.
+
+---
+
+## Decision 6: Deterministic Tie-Breaking and Strict Telemetry Validation
+
+**Decision:** When gateways have identical anomaly scores, ties are resolved deterministically using `gateway_id` ascending. In addition, invalid or missing telemetry triggers explicit typed errors rather than silent failure or synthetic ranking generation.
+
+**Alternatives considered:**
+- Leaving tie resolution to internal DataFrame/library grouping order
+- Using arbitrary or random tie-breaking
+- Silently filling missing windows with zero-score default rankings
+
+**Why deterministic tie-breaking and strict validation were chosen:**
+Field-visit dispatching requires absolute reproducibility and accountability. A dispatcher querying rankings on Monday morning must receive the exact same 15 recommended gateways regardless of row ordering in the underlying Parquet files or library sort stability. Secondary sorting by `gateway_id` guarantees bit-for-bit determinism across all environments.
+Furthermore, the service deliberately distinguishes between missing storage directories (`DataNotFoundError`), corrupt or empty datasets (`CorruptDataError`), and datasets lacking records for the specific evaluation window (`NoDataInWindowError`). Silently manufacturing empty or default rankings from corrupt inputs would obscure upstream telemetry failures.
+
+**Trade-offs:**
+- Requires secondary key evaluation during sorting (negligible runtime overhead).
+- Calls with corrupted or missing data fail immediately with clear HTTP status codes (400/422/503) rather than returning partial guesses.
 
 ---
 
@@ -105,12 +124,12 @@ The challenge brief specifies that "new data will be placed in the mounted `data
 
 If allocated an additional two weeks of development time and access to subsequent operational data, the following enhancements would be prioritized:
 
-1. **Supervised ML Model Calibration:** Train and cross-validate an XGBoost or LightGBM model utilizing the `engineer_review_2026-02-15.xlsx` expert labels, calibrating against the challenge business cost model (weighing field visit costs against failure penalties).
+1. **Supervised ML Model Calibration:** Investigate a supervised ML approach using the available engineer-review signals, with temporal validation and calibration against the challenge business cost model (weighing field visit costs against failure penalties). Candidate models could include XGBoost or LightGBM.
 2. **Multi-Metric Weighted Scoring:** Incorporate supplementary signals from the dataset (such as `reboot_importance`, `no_conn_importance`, and signal strength metrics) to refine priority ordering when breach counts tie.
 3. **Filesystem Watcher / Ingestion Webhook:** Implement an automated file-system watcher (e.g. `watchdog`) or ingestion webhook to trigger cache invalidation and reranking automatically as soon as a new Parquet partition lands in `data/telemetry/`.
-4. **Persistent Result Caching & Storage:** Persist precomputed weekly rankings in an embedded database (e.g., SQLite or DuckDB) to eliminate recomputation across duplicate requests and provide immediate response times.
+4. **Persistent Result Caching & Storage:** After establishing correctness, persistent caching in an embedded database (e.g., SQLite or DuckDB) could reduce repeated computation for previously processed weeks while still allowing explicit invalidation when new telemetry arrives.
 5. **Role-Based Access & Security:** Add lightweight API key authentication and CORS configuration to secure the dispatch API in enterprise deployments.
 
 ---
 
-*Last updated: 2026-09-16*
+*Last updated: 2026-09-17*

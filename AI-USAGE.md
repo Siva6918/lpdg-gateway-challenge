@@ -113,6 +113,18 @@ The behavior was subsequently covered by the service and API tests.
 
 ---
 
+### 3. Offline Swagger UI CDN Dependency
+
+**Issue:**
+
+FastAPI's default Swagger UI documentation depends on external CDN URLs (`cdn.jsdelivr.net`) to load `swagger-ui-bundle.js` and `swagger-ui.css`. When operating in an offline environment (required by the challenge), opening `/docs` failed with `ERR_NAME_NOT_RESOLVED` and javascript errors (`SwaggerUIBundle is not defined`).
+
+**Fix applied:**
+
+Static assets were bundled locally inside `src/static/` and served via FastAPI's `StaticFiles`. The `/docs` handler in `src/main.py` was overridden using `get_swagger_ui_html` pointing exclusively to local `/static/...` assets. A dedicated regression test (`tests/test_api.py::TestOfflineSwagger`) was added to guarantee no external URLs or CDNs are ever referenced in the rendered API documentation.
+
+---
+
 ## Role of AI in the Final Implementation
 
 **Antigravity, ChatGPT, and Claude** were used as development assistants throughout different stages of the project. They contributed code suggestions, explanations, debugging assistance, testing ideas, code-review feedback, and documentation support.
@@ -123,4 +135,4 @@ This disclosure is intended to accurately represent the use of AI during the dev
 
 ---
 
-*Last updated: 2026-09-11*
+*Last updated: 2026-09-17*

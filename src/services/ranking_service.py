@@ -37,12 +37,20 @@ class DataNotFoundError(ServiceError):
     """Raised when telemetry data is missing or cannot be loaded."""
 
 
+class CorruptDataError(ServiceError):
+    """Raised when telemetry data cannot be parsed, has missing required columns, or is empty."""
+
+
 class GatewayNotFoundError(ServiceError):
     """Raised when a gateway_id does not exist in the dataset."""
 
 
 class InvalidWeekError(ServiceError):
     """Raised when the requested week is invalid or outside the data range."""
+
+
+class NoDataInWindowError(InvalidWeekError):
+    """Raised when no usable telemetry exists for the requested ranking window."""
 
 
 class RankingService:
@@ -72,6 +80,8 @@ class RankingService:
     def get_data(self) -> pd.DataFrame:
         """Return the loaded telemetry DataFrame, loading it if not already cached."""
         if self._frame is not None:
+            if self._frame.empty:
+                raise CorruptDataError("Telemetry dataset is empty (0 rows loaded). Cannot produce rankings.")
             return self._frame
 
         if not self._telemetry_dir.exists():
@@ -80,15 +90,41 @@ class RankingService:
                 "Ensure data is placed in the configured DATA_DIR or set the DATA_DIR env var."
             )
 
+        if self._telemetry_dir.is_dir():
+            parquet_files = (
+                list(self._telemetry_dir.glob("*.parquet"))
+                + list(self._telemetry_dir.glob("*/*.parquet"))
+                + list(self._telemetry_dir.glob("*/*/*.parquet"))
+            )
+            if not parquet_files:
+                raise DataNotFoundError(
+                    f"No parquet files found in telemetry directory: {self._telemetry_dir}."
+                )
+
+        cols = ["gateway_id", "ts_utc", *METRICS]
         try:
             # We only read the columns needed for ranking to conserve memory
-            cols = ["gateway_id", "ts_utc", *METRICS]
             frame = pd.read_parquet(self._telemetry_dir, columns=cols)
-            frame["ts"] = pd.to_datetime(frame["ts_utc"], utc=True)
-            self._frame = frame
-            return self._frame
         except Exception as exc:
-            raise DataNotFoundError(f"Failed to read parquet telemetry data: {exc}") from exc
+            err_msg = str(exc).lower()
+            if "not found in" in err_msg or "column" in err_msg or "schema" in err_msg or "fieldref" in err_msg or "no match for" in err_msg:
+                raise CorruptDataError(
+                    f"Telemetry parquet data is missing required columns ({cols}): {exc}"
+                ) from exc
+            if not self._telemetry_dir.exists():
+                raise DataNotFoundError(f"Telemetry directory not found at: {self._telemetry_dir}") from exc
+            raise CorruptDataError(f"Failed to read or parse parquet telemetry data: {exc}") from exc
+
+        if frame.empty:
+            raise CorruptDataError("Telemetry dataset is empty (0 rows loaded). Cannot produce rankings.")
+
+        missing_cols = [c for c in cols if c not in frame.columns]
+        if missing_cols:
+            raise CorruptDataError(f"Telemetry data is missing required column(s): {missing_cols}")
+
+        frame["ts"] = pd.to_datetime(frame["ts_utc"], utc=True)
+        self._frame = frame
+        return self._frame
 
     def reload_data(self) -> dict[str, Any]:
         """Invalidate the cache and reload data from disk (used by POST /rankings/run).
@@ -100,7 +136,11 @@ class RankingService:
             Dictionary with reload statistics.
         """
         if self._injected_frame is not None:
-            # Test / in-memory mode: just return stats of the injected frame
+            # Test / in-memory mode: validate and return stats of the injected frame
+            if self._injected_frame.empty:
+                raise CorruptDataError("Telemetry dataset is empty (0 rows loaded). Cannot produce rankings.")
+            if "gateway_id" not in self._injected_frame.columns:
+                raise CorruptDataError("Telemetry dataset is missing required column: 'gateway_id'.")
             frame = self._injected_frame
         else:
             # Production mode: reload from disk
@@ -143,7 +183,10 @@ class RankingService:
         try:
             ranked_df = strategy.rank_week(frame, monday)
         except ValueError as exc:
-            raise InvalidWeekError(str(exc)) from exc
+            msg = str(exc)
+            if "no telemetry data available" in msg.lower() or "no usable data" in msg.lower():
+                raise NoDataInWindowError(msg) from exc
+            raise InvalidWeekError(msg) from exc
 
         top_df = ranked_df.head(limit)
         return top_df.to_dict(orient="records")
@@ -179,7 +222,7 @@ class RankingService:
         # Baseline window rows
         base_window = gw_rows[(gw_rows["ts"] >= baseline_start) & (gw_rows["ts"] < end)]
         if base_window.empty:
-            raise InvalidWeekError(
+            raise NoDataInWindowError(
                 f"No telemetry records for gateway '{gateway_id}' in 28-day window before {monday}."
             )
 
