@@ -364,6 +364,129 @@ LPDG-Innovation-Hub/
 
 ---
 
+## Complete Project Deep-Dive & Architecture Guide
+
+This section provides an end-to-end, easy-to-understand explanation of the entire system, how each component works, and why specific engineering decisions were made.
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 HIGH-LEVEL ARCHITECTURE                                │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+    [Evaluator Data: ./data/telemetry/*.parquet]
+                      │
+                      ▼ (Selective column loading: 5 core metrics)
+        ┌───────────────────────────┐
+        │   RankingService Cache    │ ◄─── POST /rankings/run (Hot Reload without restart)
+        └─────────────┬─────────────┘
+                      │
+                      ▼ (Passes DataFrame slice to Strategy)
+        ┌───────────────────────────┐
+        │  RankingStrategy Registry │
+        └─────────────┬─────────────┘
+                      │
+        ┌─────────────┴─────────────┐
+        │                           │
+        ▼                           ▼
+  [ThreeSigmaRanker]        [Future: ML/XGBoost]
+  • 28-day baseline μ, σ    • Strategy pattern
+  • 7-day 3σ anomaly check  • Interchangeable
+        │
+        ▼
+  [Ranked Gateways & Diagnostic Reasons]
+        │
+        ▼
+  [FastAPI HTTP Presentation Layer (src/api/)]
+  ├── GET  /rankings?week=...         → Top 15 ranked gateways + human-readable reasons
+  ├── GET  /gateways/{id}?week=...    → Diagnostic telemetry breakdown & baseline stats
+  ├── POST /rankings/run              → Reloads newly dropped Parquet files live
+  ├── GET  /rankings/weeks            → List of 8 scored Mondays
+  ├── GET  /strategies                → Available ranking algorithms
+  └── GET  /docs                      → 100% Offline Swagger UI (bundled local assets)
+```
+
+### 1. The Business Problem & Operational Reality
+- **The Challenge:** The LPDG operations team oversees hundreds of deployed IoT smart gateways. However, field technician capacity is strictly capped at **15 physical site visits per week**.
+- **The Objective:** Each week, the system must automatically analyze historical hourly telemetry, identify which gateways are in abnormal or failing operational states, and recommend the **top 15 highest-priority gateways** to visit, accompanied by **clear, human-readable explanations** so dispatch engineers understand exactly why each gateway was selected.
+
+---
+
+### 2. How the Anomaly Detection & Ranking Pipeline Works
+
+The detection pipeline processes data on a weekly cadence for each scored Monday (`T` = Monday 00:00 UTC):
+
+```
+       ◄──────── 28-Day Baseline Window ────────► ◄── 7-Day Evaluation ──►
+───────┬─────────────────────────────────────────┬─────────────────────────┬───────► Time
+    T - 35 days                               T - 7 days                   T (Monday 00:00)
+       [Calculates gateway's normal μ and σ]     [Counts hours exceeding μ + 3σ]
+```
+
+1. **Step 1: 28-Day Historical Baseline**  
+   For each individual gateway, the system examines the trailing 28 days of hourly telemetry strictly prior to the evaluation week (`[T - 35 days, T - 7 days)`). It computes the baseline mean ($\mu$) and standard deviation ($\sigma$) across three operational health metrics:
+   - `offline_duration_sec`: Duration the gateway was disconnected.
+   - `disconnection_cnt`: Frequency of network disconnection events.
+   - `reboot_cnt`: Frequency of unexpected gateway reboots.
+
+2. **Step 2: 7-Day Anomaly Detection Window**  
+   For the trailing 7 days immediately preceding the scored Monday (`[T - 7 days, T)`), the system evaluates each hour. An hour is flagged as an **anomaly** if any metric breaches its gateway-specific 3-sigma threshold:
+   $$\text{value} > \mu + 3\sigma$$
+
+3. **Step 3: Severity Scoring & Ranking**  
+   The gateway's anomaly score is the total count of abnormal hours in that 7-day window. Gateways are ranked descending by score:
+   - Higher score = More hours operating outside statistical norms = Higher visit urgency.
+   - Ties are broken deterministically by maximum offline duration and gateway ID.
+   - The top 15 gateways are selected for dispatch.
+
+4. **Step 4: Human-Readable Explainability**  
+   Every recommendation generates an automated diagnostic explanation explaining the exact trigger:
+   > *"43 hour(s) beyond 3 sigma of this gateway's own 28-day baseline in the last 7 days; first breach on disconnection_cnt"*
+
+---
+
+### 3. Key Software Architecture Decisions (Part 2)
+
+#### A. Layered Clean Architecture
+The codebase strictly separates concerns into independent layers:
+- **`src/api/` (Presentation Layer):** Thin FastAPI routes that handle request validation, query parameters, HTTP response codes, and Pydantic schema serialization.
+- **`src/services/` (Business Logic Layer):** `RankingService` manages telemetry loading, in-memory caching, date-window calculations, and diagnostic explanation generation.
+- **`src/ranking/` (Domain Strategy Layer):** Abstract `RankingStrategy` interface decouples the ranking algorithm from HTTP and data-loading code.
+- **`src/config.py` (Configuration Layer):** Resolves paths from environment variables (`DATA_DIR`) or defaults to `./data`.
+
+#### B. Strategy Pattern & Algorithm Registry
+The system is built for algorithm evolution following the **Open-Closed Principle (OCP)**:
+- Adding an advanced Machine Learning or LightGBM ranker only requires subclassing `RankingStrategy` and registering it in `src/ranking/registry.py`.
+- Clients can choose algorithms at runtime via `?strategy=three_sigma` or query available rankers via `GET /strategies` without any route changes.
+
+#### C. Live New Data Reload Without Restart (`POST /rankings/run`)
+In production and live evaluation sessions, new telemetry partitions (e.g., an unseen evaluation month) may arrive on disk:
+- Rather than requiring a process restart, `POST /rankings/run` flushes the cache, re-reads the updated `./data/telemetry/` directory, and refreshes the in-memory dataset in place.
+- Subsequent calls to `GET /rankings` immediately reflect the new data. Verified by end-to-end tests in `tests/test_new_data.py`.
+
+#### D. Laptop-Friendly Memory Footprint
+- The raw telemetry dataset contains over 1.4 million rows.
+- The pipeline uses PyArrow to project only the 5 essential columns (`gateway_id`, `ts_utc`, `offline_duration_sec`, `disconnection_cnt`, `reboot_cnt`).
+- A single cached DataFrame serves all queries, keeping memory usage well under 1 GB RAM on standard developer laptops.
+
+#### E. 100% Offline & Zero External Dependencies
+- Evaluators can test the entire project with the internet completely disconnected.
+- Swagger UI assets (`swagger-ui-bundle.js`, `swagger-ui.css`, `favicon.png`) are bundled locally in `src/static/`.
+- Zero external CDN links, zero API keys, zero cloud services, zero GPU requirements, and zero runtime model downloads.
+
+---
+
+### 4. Verification & Validation Summary
+
+| Check | Expected | Result |
+|---|---|---|
+| **Part 1 Predictions** | 120 rows (15 gateways × 8 scored Mondays) | **OK** (`validate_submission.py predictions.csv`) |
+| **Part 1 Baseline Script** | Supplied `baseline_3sigma.py` unchanged | **OK** (`git diff baseline_3sigma.py` is empty) |
+| **Challenge Dataset Security** | Raw `data/` excluded from version control | **OK** (`git ls-files data/` is empty; `.gitignore` enforced) |
+| **Automated Test Suite** | Unit, integration, e2e, reload, and offline docs tests | **63 passed** (`pytest -q` runs 100% offline) |
+| **Interactive Documentation** | Swagger UI loads without internet or CDNs | **OK** (served locally at `http://127.0.0.1:8000/docs`) |
+
+---
+
 ## Participant & Submission Information
 
 - **Registration ID:** `23091A05T2`
