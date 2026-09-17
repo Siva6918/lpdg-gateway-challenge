@@ -49,8 +49,23 @@ To evaluate telemetry processing or run the baseline:
    ```
 4. **Default Path:** The application and baseline scripts read `./data` by default.
 5. **Alternate Data Directory:** If your evaluation dataset is located elsewhere, point the application to it without modifying code:
-   - For Web API: `DATA_DIR=/custom/path uvicorn src.main:app --reload`
-   - For Baseline script: `python baseline_3sigma.py --data /custom/path`
+   - **Windows PowerShell:**
+     ```powershell
+     $env:DATA_DIR = "C:\path\to\custom\data"
+     uvicorn src.main:app --reload
+     ```
+   - **Linux / macOS / Git Bash:**
+     ```bash
+     DATA_DIR=/path/to/custom/data uvicorn src.main:app --reload
+     ```
+   - **Windows Command Prompt (CMD):**
+     ```cmd
+     set DATA_DIR=C:\path\to\custom\data && uvicorn src.main:app --reload
+     ```
+   - **Baseline Script (All Platforms):**
+     ```bash
+     python baseline_3sigma.py --data /path/to/custom/data
+     ```
 
 ### 2. Zero External Runtime Dependencies (100% Offline)
 - **No Internet Access Required:** The entire application, API endpoints, interactive Swagger documentation (`/docs`), OpenAPI schema (`/openapi.json`), and test suite operate completely offline. All Swagger UI assets are bundled and served locally from `src/static/`.
@@ -73,7 +88,10 @@ python validate_submission.py predictions.csv
 # 4. Start the Web API (reads ./data by default)
 uvicorn src.main:app --reload
 
-# 5. (Optional) Start with an alternate data directory
+# 5. (Optional) Start with an alternate data directory:
+# On Windows PowerShell:
+$env:DATA_DIR="C:\path\to\custom\data"; uvicorn src.main:app --reload
+# On Linux / macOS / Git Bash:
 DATA_DIR=/path/to/custom/data uvicorn src.main:app --reload
 ```
 
@@ -196,7 +214,10 @@ pip install -r requirements.txt
 # Start the API server (default data directory: data/)
 uvicorn src.main:app --reload
 
-# Start with a custom data directory
+# Start with a custom data directory:
+# On Windows PowerShell:
+$env:DATA_DIR="C:\path\to\data"; uvicorn src.main:app --reload
+# On Linux / macOS / Git Bash:
 DATA_DIR=/path/to/data uvicorn src.main:app --reload
 ```
 
