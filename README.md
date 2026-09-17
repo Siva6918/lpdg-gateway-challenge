@@ -28,6 +28,57 @@ https://portfolio-azure-theta-94.vercel.app/workspace/work/lpdg_submission-mp4
 
 ---
 
+## Evaluator Setup & Reproducibility
+
+### 1. Data Directory Setup (Required for Telemetry Processing)
+The official LPDG challenge dataset must **not** be committed to version control and is strictly excluded via `.gitignore` (`git status` and `git ls-files data/` confirm it is untracked).
+
+To evaluate telemetry processing or run the baseline:
+1. **Required Directory:** The official evaluator-provided `data/` directory is required.
+2. **Placement:** Place the evaluator-provided `data/` directory directly at the repository root after cloning:
+   ```
+   ./data/
+   ```
+3. **Expected Directory Structure:**
+   ```
+   data/
+   ├── telemetry/              ← Partitioned Parquet dataset (e.g. year=YYYY/month=MM/...)
+   ├── gateway_master.csv      ← Gateway metadata
+   ├── field_visits.csv        ← Historical field visits
+   └── ...
+   ```
+4. **Default Path:** The application and baseline scripts read `./data` by default.
+5. **Alternate Data Directory:** If your evaluation dataset is located elsewhere, point the application to it without modifying code:
+   - For Web API: `DATA_DIR=/custom/path uvicorn src.main:app --reload`
+   - For Baseline script: `python baseline_3sigma.py --data /custom/path`
+
+### 2. Zero External Runtime Dependencies (100% Offline)
+- **No Internet Access Required:** The entire application, API endpoints, interactive Swagger documentation (`/docs`), OpenAPI schema (`/openapi.json`), and test suite operate completely offline. All Swagger UI assets are bundled and served locally from `src/static/`.
+- **No API Keys Required:** No external services, proprietary tokens, or cloud APIs.
+- **No GPU Required:** Runs comfortably on standard CPU / laptop hardware (8–16 GB RAM).
+- **No Model Downloads:** Anomaly detection uses statistical 3-sigma thresholds; zero runtime weights or external assets are downloaded.
+
+### 3. Exact Commands Summary
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Run automated test suite (63 tests including offline docs regression tests)
+pytest -q
+
+# 3. Validate submission predictions file
+python validate_submission.py predictions.csv
+
+# 4. Start the Web API (reads ./data by default)
+uvicorn src.main:app --reload
+
+# 5. (Optional) Start with an alternate data directory
+DATA_DIR=/path/to/custom/data uvicorn src.main:app --reload
+```
+
+---
+
 ## Part 1 — Gateway Ranking
 
 ### Approach
@@ -58,7 +109,7 @@ Weeks 1–8: `2026-02-02` to `2026-03-23` (consecutive Mondays):
 
 ### Input Data
 
-Telemetry data must be placed in the `data/` directory at the project root (excluded from version control via `.gitignore`):
+Telemetry data is read from the `data/` directory at the project root (or custom `DATA_DIR`):
 
 ```
 data/
@@ -217,10 +268,10 @@ This capability is verified by end-to-end tests in `tests/test_new_data.py`.
 pytest -v
 ```
 
-The test suite contains **59 automated tests** using isolated synthetic fixtures (no external data required):
+The test suite contains **63 automated tests** using isolated synthetic fixtures (runs 100% offline with zero external data or network calls required):
 - `tests/test_ranking.py` — unit tests for ranking logic and baseline conformity
 - `tests/test_service.py` — service layer caching, data orchestration, and exception handling
-- `tests/test_api.py` — API endpoints, query parameters, and error status codes
+- `tests/test_api.py` — API endpoints, query parameters, error status codes, and offline Swagger UI regression tests
 - `tests/test_e2e.py` — full pipeline integration and regression tests (including `std = 0` edge-case handling)
 - `tests/test_new_data.py` — live new-data-without-restart tests with temporary disk Parquet fixtures
 
@@ -242,8 +293,12 @@ LPDG-Innovation-Hub/
 ├── validate_submission.py     ← Challenge-provided validator script
 │
 ├── src/                       ← Part 2 Software Development source code
-│   ├── main.py                ← FastAPI entry point and health check
-│   ├── config.py              ← Environment configuration & paths
+│   ├── main.py                ← FastAPI entry point (offline /docs & local static mount)
+│   ├── config.py              ← Environment configuration & paths (DATA_DIR support)
+│   ├── static/                ← Bundled local Swagger UI assets (100% offline operation)
+│   │   ├── swagger-ui-bundle.js
+│   │   ├── swagger-ui.css
+│   │   └── favicon.png
 │   ├── ranking/               ← Ranking strategies & registry
 │   │   ├── base.py            ← Strategy abstract interface
 │   │   ├── three_sigma.py     ← 3-sigma ranker implementation
@@ -254,11 +309,11 @@ LPDG-Innovation-Hub/
 │       ├── models.py          ← Pydantic schemas
 │       └── routes.py          ← Route handlers with error handling
 │
-├── tests/                     ← Automated test suite (59 tests)
+├── tests/                     ← Automated test suite (63 tests)
 │   ├── conftest.py            ← Synthetic test data fixtures
 │   ├── test_ranking.py        ← Algorithm unit tests
 │   ├── test_service.py        ← Service unit tests
-│   ├── test_api.py            ← Route and error handling tests
+│   ├── test_api.py            ← Route, error handling, and offline docs regression tests
 │   ├── test_e2e.py            ← End-to-end and regression tests
 │   └── test_new_data.py       ← New-data-without-restart tests
 │

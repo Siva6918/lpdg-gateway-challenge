@@ -172,3 +172,55 @@ class TestStrategiesList:
         defaults = [s for s in strategies if s["is_default"]]
         assert len(defaults) == 1
         assert defaults[0]["name"] == "three_sigma"
+
+
+class TestDocumentationOffline:
+    """Regression tests: verify docs work 100% offline with zero CDN dependencies."""
+
+    def test_docs_served_with_local_assets_only(self, test_client: TestClient):
+        response = test_client.get("/docs")
+        assert response.status_code == 200
+        html = response.text
+
+        # Verify local asset paths are linked
+        assert 'href="/static/swagger-ui.css"' in html
+        assert 'src="/static/swagger-ui-bundle.js"' in html
+        assert 'href="/static/favicon.png"' in html
+
+        # Verify no external CDN or external web URLs are present in the HTML
+        assert "cdn.jsdelivr.net" not in html
+        assert "unpkg.com" not in html
+        assert "cdnjs.cloudflare.com" not in html
+        assert "fastapi.tiangolo.com" not in html
+        assert "http://" not in html
+        assert "https://" not in html
+
+    def test_static_swagger_assets_served_locally(self, test_client: TestClient):
+        # JS bundle
+        res_js = test_client.get("/static/swagger-ui-bundle.js")
+        assert res_js.status_code == 200
+        assert len(res_js.content) > 100_000
+
+        # CSS stylesheet
+        res_css = test_client.get("/static/swagger-ui.css")
+        assert res_css.status_code == 200
+        assert len(res_css.content) > 50_000
+
+        # Favicon
+        res_fav = test_client.get("/static/favicon.png")
+        assert res_fav.status_code == 200
+        assert len(res_fav.content) > 100
+
+    def test_openapi_schema_available_locally(self, test_client: TestClient):
+        response = test_client.get("/openapi.json")
+        assert response.status_code == 200
+        schema = response.json()
+        assert "openapi" in schema
+        assert "paths" in schema
+        assert "/rankings" in schema["paths"]
+        assert "/gateways/{gateway_id}" in schema["paths"]
+        assert "/rankings/run" in schema["paths"]
+
+    def test_redoc_disabled_to_prevent_cdn_leak(self, test_client: TestClient):
+        response = test_client.get("/redoc")
+        assert response.status_code == 404
