@@ -4,6 +4,7 @@ Integration tests for FastAPI API endpoints.
 
 from __future__ import annotations
 
+import datetime as dt
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -173,13 +174,34 @@ class TestRunPipeline:
 
 
 class TestWeeksList:
-    def test_weeks_list_returns_8_weeks(self, test_client: TestClient):
+    def test_weeks_list_returns_available_weeks(self, test_client: TestClient):
         response = test_client.get("/rankings/weeks")
         assert response.status_code == 200
         weeks = response.json()["weeks"]
-        assert len(weeks) == 8
-        assert weeks[0] == "2026-02-02"
-        assert weeks[-1] == "2026-03-23"
+        assert "2026-02-02" in weeks
+
+    def test_weeks_list_includes_challenge_and_unseen_months(self):
+        """Verify that when reading full telemetry data, all 8 original challenge
+        weeks and newly added months (like April 2026) appear in /rankings/weeks."""
+        service = RankingService()
+        app.dependency_overrides[get_ranking_service] = lambda: service
+        try:
+            client = TestClient(app)
+            response = client.get("/rankings/weeks")
+            assert response.status_code == 200
+            weeks = response.json()["weeks"]
+            # All 8 original challenge weeks must be present
+            challenge_weeks = [
+                (dt.date(2026, 2, 2) + dt.timedelta(days=7 * i)).isoformat()
+                for i in range(8)
+            ]
+            for cw in challenge_weeks:
+                assert cw in weeks, f"Challenge week {cw} must be in available weeks"
+            # Newly loaded April 2026 weeks must also be present
+            for april_week in ["2026-04-06", "2026-04-13", "2026-04-20", "2026-04-27"]:
+                assert april_week in weeks, f"April week {april_week} must be in available weeks"
+        finally:
+            app.dependency_overrides.clear()
 
 
 class TestStrategiesList:

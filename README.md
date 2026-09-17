@@ -75,11 +75,13 @@ To evaluate telemetry processing or run the baseline:
 
 ### 3. Exact Commands Summary
 
+> **Where to run:** In your terminal / command prompt at the **repository root directory (`LPDG-Innovation-Hub/`)**:
+
 ```bash
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Run automated test suite (63 tests including offline docs regression tests)
+# 2. Run automated test suite (76 tests including new-data reload and offline docs tests)
 pytest -q
 
 # 3. Validate submission predictions file
@@ -138,6 +140,8 @@ data/
 ```
 
 ### How to Run Part 1
+
+> **Where to run:** In your terminal at the **repository root directory (`LPDG-Innovation-Hub/`)**:
 
 ```bash
 # Install dependencies
@@ -207,6 +211,8 @@ The API layer depends strictly on the `RankingStrategy` abstraction (`src/rankin
 
 ### How to Run the API
 
+> **Where to run:** In your terminal at the **repository root directory (`LPDG-Innovation-Hub/`)**:
+
 ```bash
 # Install dependencies
 pip install -r requirements.txt
@@ -224,6 +230,8 @@ DATA_DIR=/path/to/data uvicorn src.main:app --reload
 Interactive documentation is available at `http://127.0.0.1:8000/docs`.
 
 ### Example API Calls
+
+> **Where to run:** In a **separate / second terminal window** while the `uvicorn` server is running (or test directly in your browser / Swagger UI at `http://localhost:8000/docs`):
 
 ```bash
 # 1. Health check
@@ -244,7 +252,7 @@ curl "http://localhost:8000/gateways/0A2778A31BE3?week=2026-02-02"
 # 6. Re-run ranking pipeline when new telemetry arrives (no process restart)
 curl -X POST http://localhost:8000/rankings/run
 
-# 7. List available scored Mondays
+# 7. List all available scored Mondays (dynamically derived from loaded telemetry)
 curl http://localhost:8000/rankings/weeks
 
 # 8. List registered ranking strategies
@@ -272,7 +280,7 @@ The ranking pipeline and service architecture implement strict reliability and r
 - **Deterministic Tie-Breaking:** Rankings sort primarily by anomaly score (`flagged_hours`) descending. In case of tied scores, ties are resolved deterministically using `gateway_id` ascending. This guarantees that repeated runs on identical telemetry produce 100% bit-for-bit identical gateway ordering.
 - **Robust Telemetry Validation:** The service deliberately distinguishes between missing directory paths (`DataNotFoundError` → HTTP 503), corrupt/malformed/empty datasets (`CorruptDataError` → HTTP 422), and valid datasets where the requested 28-day baseline window contains no records (`NoDataInWindowError` → HTTP 400). It never silently manufactures valid rankings from empty or corrupt data.
 - **Rerun & Cache Refresh Behavior:** `POST /rankings/run` explicitly invalidates the in-memory cache and reloads telemetry from disk. When underlying data is unchanged, repeated executions remain strictly identical. When new Parquet files are dropped into `data/telemetry/`, the running process ingests the new data without requiring a process restart.
-- **Comprehensive Offline Verification:** 73 automated tests verify ranking determinism, order invariance across shuffled rows, edge-case tie-breaking, error codes, and offline Swagger asset delivery.
+- **Comprehensive Offline Verification:** 76 automated tests verify ranking determinism, order invariance across shuffled rows, edge-case tie-breaking, error codes, and offline Swagger asset delivery.
 
 ### New Data Without Process Restart (Live Session Scenario)
 
@@ -294,17 +302,19 @@ This capability is verified by end-to-end tests in `tests/test_new_data.py`.
 
 ### How to Run Tests
 
+> **Where to run:** In your terminal at the **repository root directory (`LPDG-Innovation-Hub/`)**:
+
 ```bash
 # Run the complete test suite
 pytest -v
 ```
 
-The test suite contains **73 automated tests** using isolated synthetic fixtures (runs 100% offline with zero external data or network calls required):
+The test suite contains **76 automated tests** using isolated synthetic fixtures (runs 100% offline with zero external data or network calls required):
 - `tests/test_ranking.py` — unit tests for ranking logic and baseline conformity (21 tests)
-- `tests/test_service.py` — service layer caching, data orchestration, corrupt/missing data validation, and exception handling (14 tests)
-- `tests/test_api.py` — API endpoints, query parameters, error status codes, and offline Swagger UI regression tests (24 tests)
+- `tests/test_service.py` — service layer caching, data orchestration, corrupt/missing data validation, and exception handling (15 tests)
+- `tests/test_api.py` — API endpoints, query parameters, error status codes, and offline Swagger UI regression tests (25 tests)
 - `tests/test_e2e.py` — full pipeline integration and regression tests including `std = 0` edge-case handling (5 tests)
-- `tests/test_new_data.py` — live new-data-without-restart tests with temporary disk Parquet fixtures (4 tests)
+- `tests/test_new_data.py` — live new-data-without-restart tests with temporary disk Parquet fixtures (5 tests)
 - `tests/test_determinism.py` — deterministic tie-breaking, row-order invariance, and cache reload tests (5 tests)
 
 ---
@@ -341,7 +351,7 @@ LPDG-Innovation-Hub/
 │       ├── models.py          ← Pydantic schemas
 │       └── routes.py          ← Route handlers with error handling
 │
-├── tests/                     ← Automated test suite (73 tests)
+├── tests/                     ← Automated test suite (76 tests)
 │   ├── conftest.py            ← Synthetic test data fixtures
 │   ├── test_ranking.py        ← Algorithm unit tests
 │   ├── test_service.py        ← Service unit tests
@@ -494,7 +504,7 @@ In production and live evaluation sessions, new telemetry partitions (e.g., an u
 | **Part 1 Predictions** | 120 rows (15 gateways × 8 scored Mondays) | **OK** (`validate_submission.py predictions.csv`) |
 | **Part 1 Baseline Script** | Supplied `baseline_3sigma.py` unchanged | **OK** (`git diff baseline_3sigma.py` is empty) |
 | **Challenge Dataset Security** | Raw `data/` excluded from version control | **OK** (`git ls-files data/` is empty; `.gitignore` enforced) |
-| **Automated Test Suite** | Unit, integration, e2e, reload, and offline docs tests | **63 passed** (`pytest -q` runs 100% offline) |
+| **Automated Test Suite** | Unit, integration, e2e, reload, and offline docs tests | **76 passed** (`pytest -q` runs 100% offline) |
 | **Interactive Documentation** | Swagger UI loads without internet or CDNs | **OK** (served locally at `http://127.0.0.1:8000/docs`) |
 
 ---

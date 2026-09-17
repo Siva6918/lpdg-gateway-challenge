@@ -130,8 +130,35 @@ class TestServiceDataErrors:
         assert "missing required column" in str(exc.value).lower()
 
     def test_get_available_weeks(self, minimal_frame: pd.DataFrame):
+        # minimal_frame contains telemetry covering 2026-01-05 to 2026-02-01
         service = RankingService(telemetry_frame=minimal_frame)
         weeks = service.get_available_weeks()
-        assert len(weeks) == 8
-        assert weeks[0] == "2026-02-02"
-        assert weeks[-1] == "2026-03-23"
+        assert "2026-02-02" in weeks
+        assert all(isinstance(w, str) for w in weeks)
+
+    def test_get_available_weeks_dynamically_expands_with_new_data(self, minimal_frame: pd.DataFrame):
+        service = RankingService(telemetry_frame=minimal_frame)
+        weeks_before = service.get_available_weeks()
+        assert "2026-02-02" in weeks_before
+        assert "2026-02-09" not in weeks_before
+
+        # Simulate new week of data added (e.g. week 2026-02-09)
+        extra_start = pd.Timestamp("2026-02-02", tz="UTC")
+        extra_rows = []
+        for h in range(7 * 24):
+            extra_rows.append({
+                "gateway_id": GATEWAY_NORMAL,
+                "ts_utc": (extra_start + dt.timedelta(hours=h)).isoformat().replace("+00:00", "Z"),
+                "offline_duration_sec": 0.0,
+                "disconnection_cnt": 0.0,
+                "reboot_cnt": 0.0,
+            })
+        extra_df = pd.DataFrame(extra_rows)
+        extra_df["ts"] = pd.to_datetime(extra_df["ts_utc"], utc=True)
+        expanded_frame = pd.concat([minimal_frame, extra_df], ignore_index=True)
+
+        service_expanded = RankingService(telemetry_frame=expanded_frame)
+        weeks_after = service_expanded.get_available_weeks()
+        assert "2026-02-02" in weeks_after
+        assert "2026-02-09" in weeks_after
+        assert len(weeks_after) == len(weeks_before) + 1

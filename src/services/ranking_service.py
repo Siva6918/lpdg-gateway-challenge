@@ -75,6 +75,7 @@ class RankingService:
         # reload_data() will NOT discard it — tests stay fast and deterministic.
         self._injected_frame: pd.DataFrame | None = telemetry_frame
         self._frame: pd.DataFrame | None = telemetry_frame
+        self._available_weeks: list[str] | None = None
         self.default_strategy = default_strategy
 
     def get_data(self) -> pd.DataFrame:
@@ -135,6 +136,7 @@ class RankingService:
         Returns:
             Dictionary with reload statistics.
         """
+        self._available_weeks = None
         if self._injected_frame is not None:
             # Test / in-memory mode: validate and return stats of the injected frame
             if self._injected_frame.empty:
@@ -155,9 +157,50 @@ class RankingService:
         }
 
     def get_available_weeks(self) -> list[str]:
-        """Return the list of standard scored Mondays (ISO date strings)."""
-        base = dt.date(2026, 2, 2)
-        return [(base + dt.timedelta(days=7 * i)).isoformat() for i in range(8)]
+        """Return available scored Mondays (ISO date strings) derived from telemetry data.
+
+        Dynamically discovers all Mondays that have telemetry records within their
+        trailing evaluation window [monday - 7 days, monday), starting from the
+        challenge baseline operational date (2026-02-02) or the earliest evaluable
+        Monday in the dataset.
+        """
+        if self._available_weeks is not None:
+            return list(self._available_weeks)
+
+        try:
+            frame = self.get_data()
+        except (DataNotFoundError, CorruptDataError):
+            return []
+
+        if frame.empty or "ts" not in frame.columns:
+            return []
+
+        min_ts = frame["ts"].min()
+        max_ts = frame["ts"].max()
+        if pd.isna(min_ts) or pd.isna(max_ts):
+            return []
+
+        # Start at the first Monday on or after min_ts
+        days_ahead = (0 - min_ts.date().weekday()) % 7
+        cur = min_ts.date() + dt.timedelta(days=days_ahead)
+
+        max_ts_utc = max_ts if max_ts.tzinfo else max_ts.tz_localize("UTC")
+        mondays: list[str] = []
+
+        while True:
+            end = pd.Timestamp(cur, tz="UTC")
+            recent_start = end - dt.timedelta(days=RECENT_DAYS)
+            if end > max_ts_utc + dt.timedelta(hours=1):
+                break
+
+            slice_df = frame[(frame["ts"] >= recent_start) & (frame["ts"] < end)]
+            if not slice_df.empty:
+                mondays.append(cur.isoformat())
+
+            cur += dt.timedelta(days=7)
+
+        self._available_weeks = mondays
+        return list(self._available_weeks)
 
     def get_rankings(
         self,

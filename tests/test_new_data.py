@@ -417,3 +417,48 @@ class TestNewDataWithoutRestart:
         assert gw_active not in gw_ids, (
             "Quiet gateway should not appear in weeks where it has no data"
         )
+
+    def test_weeks_endpoint_updates_after_new_month_reload(self, tmp_path: pathlib.Path):
+        """
+        REQUIREMENT: POST /rankings/run must pick up newly added monthly telemetry
+        and GET /rankings/weeks must dynamically reflect the new available weeks
+        without restarting the application process.
+        """
+        telemetry_dir = tmp_path / "telemetry"
+        telemetry_dir.mkdir()
+
+        # Step 1: Month A telemetry covering week 2026-02-02
+        month_a_start = pd.Timestamp("2026-01-05", tz="UTC")
+        month_a_df = _build_baseline_gateways(15, month_a_start)
+        _write_parquet(month_a_df, telemetry_dir / "month_a.parquet")
+
+        service = RankingService(data_dir=tmp_path)
+        app.dependency_overrides[get_ranking_service] = lambda: service
+        client = TestClient(app)
+
+        try:
+            resp1 = client.get("/rankings/weeks")
+            assert resp1.status_code == 200
+            weeks_before = resp1.json()["weeks"]
+            assert "2026-02-02" in weeks_before
+            assert "2026-03-02" not in weeks_before
+
+            # Step 2: Add Month B parquet (covering up to 2026-03-02) WHILE RUNNING
+            month_b_start = pd.Timestamp("2026-02-02", tz="UTC")
+            month_b_df = _build_baseline_gateways(15, month_b_start)
+            _write_parquet(month_b_df, telemetry_dir / "month_b.parquet")
+
+            # Step 3: Trigger reload via POST /rankings/run (no server restart)
+            run_resp = client.post("/rankings/run")
+            assert run_resp.status_code == 200
+            assert run_resp.json()["status"] == "success"
+
+            # Step 4: GET /rankings/weeks must now include the new month's weeks
+            resp2 = client.get("/rankings/weeks")
+            assert resp2.status_code == 200
+            weeks_after = resp2.json()["weeks"]
+            assert "2026-02-02" in weeks_after
+            assert "2026-03-02" in weeks_after
+            assert len(weeks_after) > len(weeks_before)
+        finally:
+            app.dependency_overrides.clear()
